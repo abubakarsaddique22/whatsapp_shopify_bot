@@ -1,12 +1,16 @@
 """Command line helpers. Run from the project folder:
 
     uv run python -m app.cli shopify-ping
+    uv run python -m app.cli import-catalog
 """
 
 import argparse
 import asyncio
 
+from app.catalog.importer import sync_mirror
 from app.core.errors import AppError
+from app.db.session import get_engine, get_sessionmaker
+from app.integrations.shopify import gateway
 from app.integrations.shopify.auth import shop_host
 from app.integrations.shopify.client import graphql
 
@@ -22,7 +26,24 @@ async def shopify_ping() -> None:
     print("Scope audit: OK (read-only scopes only)")
 
 
-COMMANDS = {"shopify-ping": shopify_ping}
+async def import_catalog() -> None:
+    """Copy the visible products of the real store into the Postgres mirror (re-runnable)."""
+    products = await gateway.list_products()  # hidden products never come back from the gateway
+    try:
+        async with get_sessionmaker()() as session, session.begin():  # commit, or roll back all
+            report = await sync_mirror(session, products)
+    finally:
+        await get_engine().dispose()
+    print(f"Visible products in Shopify: {report.total}")
+    print(f"  added:     {report.added}")
+    print(f"  updated:   {report.updated}")
+    print(f"  unchanged: {report.unchanged}")
+    print(f"  hidden:    {report.hidden}")
+    if report.skipped_hiding:
+        print("WARNING: Shopify returned 0 products, so nothing was hidden in the mirror.")
+
+
+COMMANDS = {"shopify-ping": shopify_ping, "import-catalog": import_catalog}
 
 
 def main() -> None:
