@@ -1,0 +1,8 @@
+# Maps the client's Shopify metafield names to our spec names.
+# Ask the client for their real metafield names, then edit this file (Phase 2).
+specs:
+  case_diameter_mm: custom.case_diameter
+  thickness_mm: custom.thickness
+  water_resistance: custom.water_resistance
+  strap_width_mm: custom.strap_width
+  warranty: custom.warranty

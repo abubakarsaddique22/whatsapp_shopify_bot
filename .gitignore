@@ -1,0 +1,25 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# audio / private data (never commit)
+*.ogg
+*.wav
+*.opus
+*.mp3
+data/audio/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
