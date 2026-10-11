@@ -1,12 +1,12 @@
 # PROGRESS
 
 ## Current phase
-Phase 2: Shopify API client (read-only, direct to the real Shopify store, no mock/fake gateway). Status: code done; unit tests, ruff, mypy, shopify-ping and live tests pass. Left: real metafield names in config/specs_mapping.yaml, commit and tag phase-2-done.
-Next: Phase 3 (product query service).
+Phase 3: Local product-query service and validated tools (Postgres mirror, search, price/stock/specs tools, app.cli ask). Status: not started.
 
 ## Completed phases
 - Phase 0: (do the client questions from the blueprint, section 2.6)
 - Phase 1: done (alembic, ruff, pytest pass; /healthz and /readyz OK; tag phase-1-done)
+- Phase 2: done (Shopify read-only gateway; unit, ruff, mypy, shopify-ping and live tests pass; tag phase-2-done)
 
 ## Already written (stable code, will not change)
 - core/settings.py, core/logging.py (JSON + redaction + correlation id), core/errors.py,
