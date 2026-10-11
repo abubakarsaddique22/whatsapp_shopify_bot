@@ -1,7 +1,8 @@
 # PROGRESS
 
 ## Current phase
-Phase 2: Shopify API client (read-only, direct to the real Shopify store, no mock/fake gateway). Status: not started.
+Phase 2: Shopify API client (read-only, direct to the real Shopify store, no mock/fake gateway). Status: code done; unit tests, ruff, mypy, shopify-ping and live tests pass. Left: real metafield names in config/specs_mapping.yaml, commit and tag phase-2-done.
+Next: Phase 3 (product query service).
 
 ## Completed phases
 - Phase 0: (do the client questions from the blueprint, section 2.6)
@@ -13,8 +14,10 @@ Phase 2: Shopify API client (read-only, direct to the real Shopify store, no moc
   api/health.py, domain/models.py (Lang, Intent, RouterOutput, BotResponse, ToolResult,
   ConversationState), main.py
 
+- Phase 2 files: domain/catalog.py, integrations/shopify/{auth,client,queries,mapper,gateway}.py, tests/unit/shopify/test_mapper.py, tests/live/test_dev_store.py, scripts/debug_products.py. Not written on purpose: scopes.py (audit lives in core/security.py), fake_gateway.py and evals/fixtures/store.yaml (no mock store).
+
 ## Still to write, step by step
-Phase 2 Shopify client | 3 product tools | 4 WhatsApp text | 5 language | 6 voice | 7 images |
+Phase 3 product tools | 4 WhatsApp text | 5 language | 6 voice | 7 images |
 8 RAG | 9 LangGraph | 10 sync | 11 security + handoff | 12 evals | 13 AWS | 14 acceptance
 
 ## Decisions (ADR index)
@@ -25,7 +28,9 @@ Phase 2 Shopify client | 3 product tools | 4 WhatsApp text | 5 language | 6 voic
 |------|------|--------|
 
 ## Open problems / last error
--
+- Shopify returns onlineStoreUrl = null for every product while the store is in Private mode (password page). Private mode must be OFF for the visibility rule (ACTIVE and onlineStoreUrl not null) to see products. Live tests pass with it off.
+- config/specs_mapping.yaml still has placeholder metafield names (custom.*); replace with the client's real names.
+- Refund policy comes from shopPolicies; returnPolicyProfiles (API 2026-10) not checked yet.
 
 ## Parked ideas (do not build now)
 -
@@ -33,8 +38,8 @@ Phase 2 Shopify client | 3 product tools | 4 WhatsApp text | 5 language | 6 voic
 ## External accounts and status
 | Item | Status |
 |------|--------|
-| Shopify Partner / Dev Dashboard app | |
-| Dev store with synthetic data | |
+| Shopify Partner / Dev Dashboard app | Done: client credentials, read-only scopes pass audit |
+| Dev store with synthetic data | 2 active products, policy pages created; Private mode off |
 | Meta developer account, app, test number | |
 | Meta business verification | |
 | LLM / speech / embedding keys | |
