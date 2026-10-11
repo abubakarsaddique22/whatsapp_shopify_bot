@@ -29,7 +29,8 @@ async def main(args: argparse.Namespace) -> None:
     print(f"kind={result.kind.value}  name_matches={result.name_matches}  colour={result.colour}")
     for c in result.candidates:
         print(f"  {c.score:.2f}  {c.title}  [{c.vendor or '-'}]  colours={c.colours}")
-        print(f"        variants={len(c.variant_ids)}  colour_verified={c.colour_verified}  {c.url}")
+        print(f"        variants={len(c.variant_ids)}  colour_verified={c.colour_verified}")
+        print(f"        {c.url}")
 
 
 if __name__ == "__main__":

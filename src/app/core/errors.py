@@ -73,6 +73,12 @@ class WhatsAppError(AppError):
     code = "whatsapp_error"
 
 
+class WhatsAppTemporaryError(WhatsAppError):
+    """Timeout, 429 or 5xx from WhatsApp: the outbox may retry later. Other errors will not work."""
+
+    code = "whatsapp_temporary_error"
+
+
 class ProviderError(AppError):
     """LLM / speech / embedding provider failed."""
 

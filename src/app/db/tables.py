@@ -90,3 +90,95 @@ class ProductImage(Base):
     height: Mapped[int | None] = mapped_column(Integer)
 
     __table_args__ = (UniqueConstraint("product_id", "position", name="uq_product_images_pos"),)
+
+
+# ---- Phase 4: WhatsApp text
+# wa_id (the raw phone number) is stored in conversations ONLY, because Meta needs it to send a
+# reply. Everything else (logs, analytics, inbox) uses wa_id_hash. Never log wa_id.
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wa_id: Mapped[str] = mapped_column(String(32))
+    wa_id_hash: Mapped[str] = mapped_column(String(16), index=True)
+    lang: Mapped[str | None] = mapped_column(String(8))  # set by Phase 5
+    state: Mapped[dict] = mapped_column(JSONB, default=dict)  # ConversationState as JSON
+    last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (UniqueConstraint("wa_id", name="uq_conversations_wa_id"),)
+
+
+class WhatsAppInbox(Base):
+    """One row per message Meta delivers. The unique wamid makes redelivery harmless."""
+
+    __tablename__ = "whatsapp_inbox"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    wamid: Mapped[str] = mapped_column(String)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    wa_id_hash: Mapped[str] = mapped_column(String(16))
+    msg_type: Mapped[str] = mapped_column(String(16))  # text | audio | image | other
+    text: Mapped[str | None] = mapped_column(Text)
+    media_id: Mapped[str | None] = mapped_column(String)  # used by Phase 6 and 7
+    mime_type: Mapped[str | None] = mapped_column(String)
+    wa_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (UniqueConstraint("wamid", name="uq_whatsapp_inbox_wamid"),)
+    # status values: pending | processing | done | failed | ignored
+
+
+class Message(Base):
+    """The conversation transcript (customer and bot turns)."""
+
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    direction: Mapped[str] = mapped_column(String(3))  # in | out
+    body: Mapped[str] = mapped_column(Text)
+    wamid: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("wamid", name="uq_messages_wamid"),)
+
+
+class WhatsAppOutbox(Base):
+    """One row per reply to send. (inbox_id, seq) stops a retry sending the same reply twice."""
+
+    __tablename__ = "whatsapp_outbox"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    inbox_id: Mapped[int | None] = mapped_column(
+        ForeignKey("whatsapp_inbox.id", ondelete="SET NULL")
+    )
+    seq: Mapped[int] = mapped_column(Integer, default=0)
+    body: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    wamid: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (UniqueConstraint("inbox_id", "seq", name="uq_whatsapp_outbox_inbox_seq"),)
+    # status values: pending | sent | failed
