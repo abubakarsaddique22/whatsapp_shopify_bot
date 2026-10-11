@@ -4,10 +4,10 @@ Plain functions that take an AsyncSession. The caller owns the transaction (comm
 Only product DATA is stored here; live price and stock always come from Shopify (Blueprint 4.6).
 """
 
-from collections.abc import Collection
-from typing import Any
+from collections.abc import Collection, Sequence
+from typing import Any, cast
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import CursorResult, Row, delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,4 +56,31 @@ async def hide_missing(session: AsyncSession, seen_ids: Collection[str]) -> int:
         .where(ProductMirror.is_visible.is_(True), ProductMirror.id.not_in(list(seen_ids)))
         .values(is_visible=False)
     )
-    return result.rowcount or 0
+    return cast("CursorResult[Any]", result).rowcount or 0
+
+
+async def product_basics(session: AsyncSession, product_id: str) -> Row[Any] | None:
+    """Mirror facts of ONE visible product, or None (missing and hidden look the same)."""
+    result = await session.execute(
+        select(
+            ProductMirror.id,
+            ProductMirror.title,
+            ProductMirror.url,
+            ProductMirror.vendor,
+            ProductMirror.product_type,
+            ProductMirror.tags,
+            ProductMirror.options,
+            ProductMirror.description_text,
+        ).where(ProductMirror.id == product_id, ProductMirror.is_visible.is_(True))
+    )
+    return result.one_or_none()
+
+
+async def variants_of(session: AsyncSession, product_id: str) -> Sequence[Row[Any]]:
+    """Variant id, title and options from the mirror. No price and no stock: those are live."""
+    result = await session.execute(
+        select(VariantMirror.id, VariantMirror.title, VariantMirror.options)
+        .where(VariantMirror.product_id == product_id)
+        .order_by(VariantMirror.title)
+    )
+    return cast("Sequence[Row[Any]]", result.all())

@@ -1,17 +1,17 @@
 # PROGRESS
 
 ## Current phase
-Phase 3: Local product-query service and validated tools (Postgres mirror, search, price/stock/specs tools, app.cli ask). Status: in progress, 3 of 8 steps done.
+Phase 3: Local product-query service and validated tools (Postgres mirror, search, price/stock/specs tools, app.cli ask). Status: in progress, 7 of 8 steps done (step 8 left).
 
 ### Phase 3 steps (one at a time; run the checks, then report)
 - [x] Step 1: price parser (language/price_parser.py, language/lexicon.py) + mirror migration check. Tests: test_price_parser, test_lexicon
 - [x] Step 2: normalizer (catalog/normalizer.py): text, aliases, option names, colours, case size. Tests: test_normalizer
-- [x] Step 3: price formatter + stock helper (catalog/price.py, catalog/stock.py). Tests: test_price, test_stock (written; confirm pass)
-- [ ] Step 4: mirror import (db/repositories.py + `app.cli import-catalog`): real store -> Postgres mirror
-- [ ] Step 5: search (catalog/search.py): pg_trgm + filters, one match / ambiguous / none. Tests T13, T14 on the real store
-- [ ] Step 6: specs + images (catalog/specs.py, catalog/images.py). Test T04
-- [ ] Step 7: tools (agent/tools.py, tools 1 to 6) + tests/integration/test_tools.py. Tests T01-T04, T13-T15
-- [ ] Step 8: CLI `ask` (rule-based), ten manual questions vs Shopify admin, update PROGRESS.md, git commit + tag phase-3-done
+- [x] Step 3: price formatter + stock helper (catalog/price.py, catalog/stock.py). Tests: test_price, test_stock (pass)
+- [x] Step 4: mirror import (db/repositories.py + `app.cli import-catalog`): real store -> Postgres mirror (tests pass)
+- [x] Step 5: search (catalog/search.py): pg_trgm + filters, one match / ambiguous / none. Tests T13, T14 on the real store (pass)
+- [x] Step 6: specs + images (catalog/specs.py, catalog/images.py). Test T04 (pass)
+- [x] Step 7: tools (agent/tools.py, tools 1 to 6) + tests/integration/test_tools.py. Tests T01-T04, T13-T15 (pass, incl. RUN_LIVE=1 live price/stock)
+- [ ] Step 8: CLI `ask` (rule-based), ten manual questions vs Shopify admin, update PROGRESS.md, git commit + tag phase-3-done. IN PROGRESS: `ask` written (agent/rules.py, cli.py, tests/unit/test_rules.py); still to do: run checks, ten manual questions vs Shopify admin, commit + tag
 
 Testing rule: no fake store data. Search, tools and CLI run against the real dev store. Only T15 (Shopify down) uses a simulated error.
 Store data still to add in Shopify: colour variants (GA-2100: Black/Blue/Silver), low stock (qty 1-3), specs metafields (custom.case_diameter, custom.water_resistance), a Case size option, more images.

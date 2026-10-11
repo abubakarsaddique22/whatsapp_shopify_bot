@@ -2,11 +2,15 @@
 
     uv run python -m app.cli shopify-ping
     uv run python -m app.cli import-catalog
+    uv run python -m app.cli ask "GA-2100 ka price?"
+    uv run python -m app.cli ask "is it water resistant" --debug
 """
 
 import argparse
 import asyncio
+import json
 
+from app.agent import rules
 from app.catalog.importer import sync_mirror
 from app.core.errors import AppError
 from app.db.session import get_engine, get_sessionmaker
@@ -43,15 +47,45 @@ async def import_catalog() -> None:
         print("WARNING: Shopify returned 0 products, so nothing was hidden in the mirror.")
 
 
+async def ask(question: str, *, debug: bool = False) -> None:
+    """Answer one customer question with the rule-based reader and the live tools (no LLM).
+
+    Reads the mirror and calls Shopify for price and stock. `--debug` also prints every tool
+    result, so the numbers can be compared with the Shopify admin.
+    """
+    try:
+        async with get_sessionmaker()() as session:
+            reply = await rules.answer(session, question)
+    finally:
+        await get_engine().dispose()
+    print(reply.text)
+    if debug:
+        parsed = reply.parsed
+        print(
+            f"\n[understood] intent={parsed.intent.value} product={parsed.product_query!r} "
+            f"colour={parsed.colour} size_mm={parsed.size_mm} max_price={parsed.max_price}"
+        )
+        for result in reply.results:
+            print(json.dumps(result.model_dump(mode="json"), indent=2, ensure_ascii=False))
+
+
 COMMANDS = {"shopify-ping": shopify_ping, "import-catalog": import_catalog}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="app.cli")
-    parser.add_argument("command", choices=sorted(COMMANDS))
+    parser.add_argument("command", choices=[*sorted(COMMANDS), "ask"])
+    parser.add_argument("question", nargs="*", help="for 'ask': the customer's sentence")
+    parser.add_argument("--debug", action="store_true", help="for 'ask': print the tool results")
     args = parser.parse_args()
+    question = " ".join(args.question).strip()
+    if args.command == "ask" and not question:
+        parser.error('ask needs a question, for example: ask "GA-2100 ka price?"')
     try:
-        asyncio.run(COMMANDS[args.command]())
+        if args.command == "ask":
+            asyncio.run(ask(question, debug=args.debug))
+        else:
+            asyncio.run(COMMANDS[args.command]())
     except AppError as exc:
         print(f"ERROR ({exc.code}): {exc.message}")
         raise SystemExit(1) from exc
