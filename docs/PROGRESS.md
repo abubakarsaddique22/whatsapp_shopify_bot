@@ -1,11 +1,11 @@
 # PROGRESS
 
 ## Current phase
-Phase 1: Foundation. Status: skeleton delivered, run the tests locally (see README).
+Phase 2: Shopify API client (read-only, direct to the real Shopify store, no mock/fake gateway). Status: not started.
 
 ## Completed phases
 - Phase 0: (do the client questions from the blueprint, section 2.6)
-- Phase 1: (mark done after tests pass + git tag phase-1-done)
+- Phase 1: done (alembic, ruff, pytest pass; /healthz and /readyz OK; tag phase-1-done)
 
 ## Already written (stable code, will not change)
 - core/settings.py, core/logging.py (JSON + redaction + correlation id), core/errors.py,
