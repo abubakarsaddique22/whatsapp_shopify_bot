@@ -8,7 +8,7 @@ Rules:
 - The first price found in the text wins ('5000 se 10000' -> 5000).
 - A bare number below MIN_BARE_PRICE is NOT a price ('40mm', 'size 42'). With a unit
   ('10k', '1 lakh') any size is accepted.
-- A number glued to letters is not a price ('ga2100' is a model code).
+- A number glued to letters or a hyphen is not a price ('ga2100', 'GA-2100' are model codes).
 - Returns None when there is no price. Money is a whole number in the store currency.
 """
 
@@ -60,10 +60,11 @@ def _compiled() -> tuple[re.Pattern[str], re.Pattern[str], dict[str, int]]:
     units = {**_BUILTIN_UNITS, **{k.lower(): v for k, v in get_lexicon().numbers.items()}}
     unit_alt = "|".join(sorted((re.escape(u) for u in units), key=len, reverse=True))
     word_alt = "|".join(sorted(NUMBER_WORDS, key=len, reverse=True))
-    # (?<![a-z\d.,]) = the number must not be glued to a letter or to another number.
+    # (?<![a-z\d.,-]) = the number must not be glued to a letter, another number or a hyphen
+    #                    ('GA-2100' is a model code, not 2100 rupees).
     # (?![a-z])      = the unit must be a whole word ('k' in 'kala' is not a unit).
     numeric = re.compile(
-        rf"(?<![a-z\d.,])(?P<digits>\d{{1,3}}(?:,\d{{3}})+|\d+)(?:\.(?P<frac>\d+))?"
+        rf"(?<![a-z\d.,-])(?P<digits>\d{{1,3}}(?:,\d{{3}})+|\d+)(?:\.(?P<frac>\d+))?"
         rf"(?:\s*(?P<unit>{unit_alt})(?![a-z]))?"
     )
     words = re.compile(rf"\b(?P<word>{word_alt})\s+(?P<unit>{unit_alt})(?![a-z])")

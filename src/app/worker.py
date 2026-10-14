@@ -13,12 +13,15 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.agent.language_step import format_debug_reply, run_language_step
 from app.core.errors import AppError
 from app.core.logging import setup_logging
 from app.core.settings import get_settings
 from app.db import repositories as repo
 from app.db.session import get_engine, get_sessionmaker
 from app.db.tables import WhatsAppInbox
+from app.integrations.llm.base import ChatModel
+from app.integrations.llm.chat_factory import get_chat_model
 from app.integrations.whatsapp.sender import send_one
 
 log = logging.getLogger(__name__)
@@ -42,9 +45,28 @@ def handle_message(msg_type: str, text: str | None) -> list[str]:
     return [UNSUPPORTED_REPLY]
 
 
+async def debug_language_reply(
+    session: AsyncSession, conversation_id: int, text: str, llm: ChatModel | None = None
+) -> str:
+    """Phase 5, step 6 (development only): the reply says what the router understood.
+
+    Runs the language step (router + sticky language + reply language) and saves the new
+    conversation state. Switched on by DEBUG_REPLY=true. Phase 9 replaces this.
+    """
+    result = await run_language_step(
+        session,
+        conversation_id,
+        text,
+        llm or get_chat_model("router"),
+        urdu_script_replies=get_settings().urdu_script_replies,
+    )
+    return format_debug_reply(result)
+
+
 async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> None:
     """Do the work for one claimed inbound message. The caller commits."""
-    if get_settings().kill_switch:
+    settings = get_settings()
+    if settings.kill_switch:
         await repo.finish_inbox(session, inbox.id, "ignored")
         log.warning("kill_switch_on", extra={"inbox_id": inbox.id})
         return
@@ -52,7 +74,10 @@ async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> None:
     await repo.add_message(
         session, inbox.conversation_id, "in", inbox.text or f"[{inbox.msg_type}]", inbox.wamid
     )
-    for seq, body in enumerate(handle_message(inbox.msg_type, inbox.text)):
+    replies = handle_message(inbox.msg_type, inbox.text)
+    if settings.debug_reply and inbox.msg_type == "text" and inbox.text:
+        replies = [await debug_language_reply(session, inbox.conversation_id, inbox.text)]
+    for seq, body in enumerate(replies):
         await repo.add_outbox(session, inbox.conversation_id, inbox.id, seq, body)
     await repo.finish_inbox(session, inbox.id, "done")
 

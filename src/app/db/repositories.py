@@ -20,6 +20,7 @@ from app.db.tables import (
     WhatsAppInbox,
     WhatsAppOutbox,
 )
+from app.domain.models import ConversationState
 from app.integrations.whatsapp.payloads import InboundMessage
 
 
@@ -259,6 +260,38 @@ async def conversation_wa_id(session: AsyncSession, conversation_id: int) -> str
         select(Conversation.wa_id).where(Conversation.id == conversation_id)
     )
     return result.scalar_one_or_none()
+
+
+# ---- Phase 5: conversation state (sticky language, last router output)
+
+
+async def load_state(session: AsyncSession, conversation_id: int) -> ConversationState:
+    """The saved ConversationState of this conversation. A new conversation (empty JSON)
+    gets a fresh state. conversation_id and sender_hash always come from the row, so the JSON
+    can never disagree with the table."""
+    result = await session.execute(
+        select(Conversation.state, Conversation.wa_id_hash).where(
+            Conversation.id == conversation_id
+        )
+    )
+    row = result.one_or_none()
+    if row is None:
+        raise LookupError(f"conversation {conversation_id} does not exist")
+    saved, wa_id_hash = row
+    data = {**(saved or {}), "conversation_id": str(conversation_id), "sender_hash": wa_id_hash}
+    return ConversationState.model_validate(data)
+
+
+async def save_state(
+    session: AsyncSession, conversation_id: int, state: ConversationState
+) -> None:
+    """Save the state as JSON and keep conversations.lang in step with state.language."""
+    await session.execute(
+        update(Conversation)
+        .where(Conversation.id == conversation_id)
+        .values(state=state.model_dump(mode="json"), lang=state.language.value)
+        .execution_options(synchronize_session=False)
+    )
 
 
 async def add_message(

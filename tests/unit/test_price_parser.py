@@ -38,6 +38,7 @@ from app.language.price_parser import parse_price
         ("5000 se 10000 tak", 5_000),
         # model codes are not prices
         ("casio ga2100 under 10k", 10_000),
+        ("casio GA-2100 under 10k", 10_000),
     ],
 )
 def test_parse_price_found(text: str, expected: int):
@@ -54,6 +55,9 @@ def test_parse_price_found(text: str, expected: int):
         "size 42",
         "10 kala watch",  # the 'k' in 'kala' is not a unit
         "casio ga2100",  # glued model code
+        "casio GA-2100",  # model code with a hyphen
+        "What is the price of the GA-2100?",
+        "dw-5600 kitne ka hai?",
         "mujhe do kala watch chahiye",  # 'do' is a word here, not a number
     ],
 )

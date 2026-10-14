@@ -1,7 +1,13 @@
 roman_urdu_words: [hai, hain, hy, h, nahi, nahin, nai, nhi, kya, kia, kitna, kitny, kitne, kitnay,
   kahan, kab, kaise, kyun, ap, aap, mujhe, mjhe, mera, meri, ye, yeh, wo, woh, is, iski, isme,
   ka, ki, ke, ko, se, mein, me, main, par, pe, chahiye, chahye, bhejo, bhej, dein, den, karo,
-  kar, wali, wala, waly, abhi, thora, bohat, bahut, acha, achi, theek, thik, shukriya, jee, ji]
+  kar, wali, wala, waly, abhi, thora, bohat, bahut, acha, achi, theek, thik, shukriya, jee, ji,
+  paas, pas, ma, din, hogi, hoga, milta, milti, milega, batao, bataein, bataen, bata, andar, koi,
+  aur, tumhara, tum, aapka, apka, kaun, kon, lena, chahta, chahte, sakta, sakti, sakte, raha,
+  rahi, rahe, tha, thi, bhi, ya, lekin, magar, kuch, sab, tak, wale, dikhao, dikha, dekhna,
+  salam, assalam, alaikum, walaikum, shukria, mehrbani, maazrat,
+  kala, kaala, safed, neela, nila, lal, surkh, sabz, hara, peela, bhura, bhoora, gulabi,
+  sunehri, chandi, hazar, hazaar, lakh]
 english_stopwords: [the, is, are, a, an, of, to, and, in, "on", for, with, do, you, have, can,
   send, me, what, how, much, price, available, please, picture, photo, color, colour, size]
 colors:

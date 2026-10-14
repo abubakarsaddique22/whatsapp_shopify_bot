@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr = SecretStr("")
     llm_timeout_seconds: int = 20
 
+    # eval only (Ollama, OpenAI-compatible): used by `eval-router`; the app keeps LLM_PROVIDER
+    ollama_base_url: str = "http://localhost:11434/v1"  # cloud: https://ollama.com/v1
+    ollama_api_key: SecretStr = SecretStr("ollama")  # local ignores it; cloud needs a real key
+    eval_router_model: str = "gpt-oss:120b-cloud"  # same family and size as Groq's gpt-oss-120b
+
     # speech
     stt_provider: str = "fake"
     stt_api_key: SecretStr = SecretStr("")
@@ -66,6 +71,8 @@ class Settings(BaseSettings):
     # language
     urdu_script_replies: bool = False
     language_sticky_messages: int = 5
+    # Phase 5 only: reply with what the router understood instead of 'Received'. Local use.
+    debug_reply: bool = False
 
     # rate limits
     rate_limit_per_minute: int = 8
