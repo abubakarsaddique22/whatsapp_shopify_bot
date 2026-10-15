@@ -43,7 +43,10 @@ async def session() -> AsyncIterator[AsyncSession]:
 
 @pytest.fixture(autouse=True)
 def _kill_switch_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(worker, "get_settings", lambda: Settings(kill_switch=False))
+    # debug_reply=False on purpose: a DEBUG_REPLY=true in .env must not reach the real LLM here
+    monkeypatch.setattr(
+        worker, "get_settings", lambda: Settings(kill_switch=False, debug_reply=False)
+    )
 
 
 # ---- helpers
@@ -146,7 +149,9 @@ async def test_processing_the_same_message_twice_queues_one_reply(session: Async
 async def test_kill_switch_ignores_the_message_and_queues_no_reply(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(worker, "get_settings", lambda: Settings(kill_switch=True))
+    monkeypatch.setattr(
+        worker, "get_settings", lambda: Settings(kill_switch=True, debug_reply=False)
+    )
     inbox_id = await queue_inbound(session)
     await process(session)
 

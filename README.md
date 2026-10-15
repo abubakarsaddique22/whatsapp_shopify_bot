@@ -4,25 +4,39 @@ Chhota, safe bot: customer WhatsApp par text ya voice bhejta hai, bot Shopify ke
 ya approved documents se jawab deta hai. Ye kuch change nahi kar sakta (read-only).
 
 Design: `Shopify_WhatsApp_AI_Support_Bot_Master_Blueprint_v2.pdf` (Blueprint v2.0).
+Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 
-## Is zip mein kya hai
-Phase 1 ka mukammal, tested skeleton. Jo code kabhi change nahi hota wo pehle se likha hua hai:
+## Ab tak kya bana hai
 
-| File | Kaam |
-|------|------|
-| `src/app/core/settings.py` | .env se typed settings, secrets `SecretStr` mein |
-| `src/app/core/logging.py` | JSON logs, secrets/phone redaction, correlation id |
-| `src/app/core/errors.py` | Saari custom exceptions + FastAPI handlers |
-| `src/app/core/ids.py` | Correlation id, phone hash |
-| `src/app/core/security.py` | WhatsApp/Shopify signature check, Shopify scope audit |
-| `src/app/db/` | Async DB session, `Base` for migrations |
-| `src/app/api/health.py` | `/healthz` aur `/readyz` |
-| `src/app/domain/models.py` | Pydantic models: Lang, Intent, RouterOutput, BotResponse, ToolResult, ConversationState |
-| `src/app/main.py` | FastAPI app + correlation middleware |
-| `prompts/`, `config/` | Router/composer prompts, Roman Urdu lexicon, mappings |
+| Phase | Kaam | Haalat |
+|-------|------|--------|
+| 1 | Foundation: settings, logging, errors, DB, `/healthz`, `/readyz` | Done |
+| 2 | Shopify read-only gateway (live products, price, stock) | Done |
+| 3 | Product tools, search, catalog mirror, `app.cli ask` | Done |
+| 4 | WhatsApp text: webhook, inbox/outbox, worker, `/dev/simulate` | Lagbhag done (live photo aur duplicate checks baqi) |
+| 5 | Language detection, router, reply-language policy, debug reply | Done (router language match 92.8%, target 95%) |
+| 6 se 14 | Voice, images, RAG, LangGraph, sync, security, evals, AWS, acceptance | Shuru nahi hue |
 
-Baqi folders (`integrations/`, `catalog/`, `rag/`, `agent/` ...) abhi khali hain. Inhe
-phase by phase bharenge (Phase 2 se).
+## Code ka naqsha (`src/app/`)
+
+| Folder / file | Kaam |
+|---------------|------|
+| `core/` | Settings (`.env`), JSON logging aur redaction, errors, ids, signature checks |
+| `db/` | Async session, tables, repositories (mirror, inbox/outbox, conversation state) |
+| `domain/` | Pydantic models: Lang, Intent, RouterOutput, BotResponse, ConversationState |
+| `integrations/shopify/` | Read-only Shopify GraphQL gateway |
+| `integrations/whatsapp/` | Meta payloads, client, sender (real aur fake) |
+| `integrations/llm/` | Chat model factory (Groq), FakeLLM tests ke liye |
+| `catalog/` | Normalizer, search (pg_trgm), price, stock, specs, images, importer |
+| `language/` | Roman Urdu lexicon, detection, price parser, language policy (table 6.1) |
+| `agent/` | `router.py` (intent + language), `language_step.py`, `tools.py`, `rules.py`, `router_eval.py` |
+| `api/` | `/healthz`, `/readyz`, WhatsApp webhook, `/dev/*` (sirf local) |
+| `worker.py` | Inbound message uthata hai, jawab outbox mein daalta hai, bhejta hai |
+| `cli.py` | `ask`, `import-catalog`, `eval-router` |
+| `prompts/`, `config/`, `evals/` | Router aur composer prompts, lexicon aur mappings, golden sets |
+
+Khali (baad ke phases ke liye): `voice/`, `rag/`, `sync/`, `security/`, `handoff/`, `jobs/`,
+`agent/graph.py`, `agent/composer.py`.
 
 ## Windows (cmd) mein chalane ke steps
 ```
@@ -35,19 +49,39 @@ copy .env.example .env
 
 REM 3) database
 docker compose up -d db
+uv run alembic upgrade head
 
-REM 4) tests
+REM 4) tests, lint, types
 uv run pytest
+uv run ruff check .
+uv run mypy src
 
-REM 5) server
+REM 5) server (ek window) aur worker (doosri window)
 uv run uvicorn app.main:app --reload --app-dir src
+uv run python -m app.worker
 ```
 Phir browser mein kholein: http://localhost:8000/docs aur http://localhost:8000/healthz
 
 VS Code: folder open karein, extensions install karein (popup aayega), `Ctrl+Shift+P` ->
 "Python: Select Interpreter" -> `.venv`.
 
+## Zaban (language) ko local test karna
+Bina asli WhatsApp ke bot ko message bhejne ke liye (`APP_ENV=local`):
+```
+REM .env mein: DEBUG_REPLY=true, LLM_PROVIDER=groq, LLM_API_KEY, ROUTER_MODEL
+curl -X POST http://localhost:8000/dev/simulate -H "Content-Type: application/json" -d "{\"text\":\"GA-2100 ki price kya hai\"}"
+curl http://localhost:8000/dev/outbox
+```
+`DEBUG_REPLY=true` par jawab mein bot batata hai ke usne kya samjha:
+`[debug] language=... | intent=... | conversation=... | reply_in=...`.
+Kaam khatam hote hi `DEBUG_REPLY=false` kar dein. Production mein ye kabhi on nahi hona chahiye.
+
+Router ki quality napne ke liye: `uv run python -m app.cli eval-router`
+(69 golden cases; Ollama par chalta hai, `--provider groq` se Groq par).
+
 ## Qaide
 - `.env` kabhi Git ya chat mein na dalein.
-- Ek waqt mein ek phase. Har phase ke baad `docs/PROGRESS.md` update + git commit.
+- WhatsApp ka temporary token 24 ghante mein expire hota hai (HTTP 401, code 190): naya token
+  `.env` mein daal kar worker dobara chalayein.
+- Ek waqt mein ek phase. Har phase ke baad `docs/PROGRESS.md` update + git commit + tag.
 - Pehle development store use karein, client ka real store baad mein.
