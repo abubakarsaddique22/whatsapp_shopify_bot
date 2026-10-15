@@ -166,9 +166,7 @@ def map_specs(metafields: list[dict], mapping: dict[str, str]) -> dict[str, str]
 # ---- products and variants
 
 
-def map_variant(
-    node: dict, product_id: str, currency: str, *, low_stock_threshold: int
-) -> Variant:
+def map_variant(node: dict, product_id: str, currency: str, *, low_stock_threshold: int) -> Variant:
     try:
         quantity = node.get("inventoryQuantity")
         available = bool(node["availableForSale"])

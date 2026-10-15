@@ -7,12 +7,13 @@
 | 1 | Foundation (alembic, ruff, pytest, /healthz, /readyz) | DONE, tag phase-1-done |
 | 2 | Shopify read-only gateway | DONE, tag phase-2-done |
 | 3 | Product tools, search, `app.cli ask` | DONE, tag phase-3-done |
-| 4 | WhatsApp text (webhook, inbox/outbox, worker, /dev/simulate) | ALMOST DONE: manual live test works both ways (2026-10-14); only the remaining Step 6 checks, commit and tag are left, see below |
+| 4 | WhatsApp text (webhook, inbox/outbox, worker, /dev/simulate) | DONE (tag phase-4-done once committed): live text works both ways (2026-10-14), photo reply and duplicate payload checked locally (2026-10-15). One small item open: photo from a real phone, needs a fresh token |
 | 5 | Language detection + response-language control | DONE (code and tests), tag phase-5-done once committed. Gate gap recorded, not hidden: router language 92.8% vs 95% target, golden set still needs native review |
-| 6 to 14 | Voice, images, RAG, LangGraph, sync, security, evals, AWS, acceptance | NOT STARTED |
+| 6 | Voice messages + speech-to-text | IN PROGRESS: Steps 1 to 4 done and tested with fakes (4c written, run pending). Step 5 (real providers, bake-off script) next. Live voice-note check, bake-off clips and the tag wait for the phone, see 'Waiting for the phone' below |
+| 7 to 14 | Images, RAG, LangGraph, sync, security, evals, AWS, acceptance | NOT STARTED |
 
 ## Current phase
-Phase 5 is finished (all 6 steps; full pytest, ruff and mypy passed on 2026-10-15, DEBUG_REPLY set back to false). Next: commit + tag phase-5-done, then go back to the Phase 4 leftovers (new WhatsApp token, photo reply check, duplicate-payload check, commit + tag phase-4-done), then Phase 6 (voice). Open: router language match is 92.8% vs the 95% target (model calls short Urdu-grammar questions with English nouns 'mixed'), and the 69 golden cases need a native speaker.
+Phase 4 and Phase 5 are finished (Phase 5: all 6 steps; full pytest, ruff and mypy passed on 2026-10-15, DEBUG_REPLY set back to false). Next: commit + tag phase-4-done and phase-5-done, then Phase 6 (voice). Before Phase 6 is live-tested: new WhatsApp token (the temporary one expired, HTTP 401 code 190) and the photo-from-a-real-phone check. Open: router language match is 92.8% vs the 95% target (model calls short Urdu-grammar questions with English nouns 'mixed'), and the 69 golden cases need a native speaker.
 
 ## Phase 0: Client questions (NOT DONE)
 - Do the client questions from the blueprint, section 2.6. Items marked A4 in the language policy table (6.1) also need client confirmation (Urdu-script text and Urdu/Punjabi voice get Roman Urdu replies).
@@ -35,8 +36,8 @@ Phase 5 is finished (all 6 steps; full pytest, ruff and mypy passed on 2026-10-1
 Testing rule: no fake store data. Search, tools and CLI run against the real dev store. Only T15 (Shopify down) uses a simulated error.
 Store data still to add in Shopify: colour variants (GA-2100: Black/Blue/Silver), low stock (qty 1-3), specs metafields (custom.case_diameter, custom.water_resistance), a Case size option, more images.
 
-## Phase 4: WhatsApp text (ALMOST DONE)
-Steps 1 to 5 are built and tested locally with a FakeSender (full pytest 505 passed on 2026-10-14, incl. webhook, worker, unsupported-type reply and duplicate-wamid tests; Postgres must be running: `docker compose up -d`). The WhatsApp access token and other variables are now in .env. Manual live test done on 2026-10-14: a message sent from WhatsApp arrives at the bot, and a reply from the bot reaches WhatsApp (both directions work). Still open: the photo/unsupported-type check, the duplicate-payload check, then commit and tag.
+## Phase 4: WhatsApp text (DONE)
+Steps 1 to 5 are built and tested locally with a FakeSender (full pytest 505 passed on 2026-10-14, incl. webhook, worker, unsupported-type reply and duplicate-wamid tests; Postgres must be running: `docker compose up -d`). The WhatsApp access token and other variables are now in .env. Manual live test done on 2026-10-14: a message sent from WhatsApp arrives at the bot, and a reply from the bot reaches WhatsApp (both directions work). On 2026-10-15 both remaining checks were done locally through /dev/simulate: an image message gets the polite unsupported-type reply (one outbox row), and the same wamid sent twice gives exactly one 'Received' row. Real Meta image payload parsing is covered by tests/unit/whatsapp/test_payloads.py. The sends in that run failed with HTTP 401 / code 190 only because the temporary WhatsApp token had expired.
 
 ### Phase 4 steps
 - [x] Step 1: tables + migration (db/tables.py, migrations/versions/7b2e5f1a9c63_whatsapp_text.py): conversations, whatsapp_inbox, messages, whatsapp_outbox
@@ -44,18 +45,18 @@ Steps 1 to 5 are built and tested locally with a FakeSender (full pytest 505 pas
 - [x] Step 3: client.py + sender.py (RealSender via Graph API, FakeSender for local and tests)
 - [x] Step 4: repositories + api/whatsapp_webhook.py (GET verify, POST signature check, dedupe by wamid)
 - [x] Step 5: worker.py + api/dev.py (/dev/simulate) + main.py routers. Tests: tests/integration/test_whatsapp_webhook.py, test_worker_sender.py (tests/e2e_local is an empty folder; the blueprint does not list it for Phase 4)
-- [ ] Step 6: live test on the Meta test number (text in and out works manually; photo reply and duplicate-payload checks not yet confirmed), update PROGRESS.md (done), commit + tag phase-4-done (not yet)
+- [x] Step 6: live test on the Meta test number: text in and out works (2026-10-14, webhook statuses ok); photo reply and duplicate-payload checks done locally via /dev/simulate (2026-10-15); PROGRESS.md updated. Still to do by hand: `git commit -m "phase 4: whatsapp text"` + `git tag phase-4-done`.
 
-### Phase 4: what is still left (come back after Phase 5)
+### Phase 4: what is still left (small items, none blocks the tag)
 1. Sending now works in the manual test (earlier error 131031 no longer blocks it). Support ticket no longer needed unless the error comes back.
-2. Live round trip on the test number: text message in and reply out works (manual). Still to confirm: send a photo and get the polite unsupported-type reply; same signed payload twice gives one reply.
+2. Live round trip on the test number: text in and reply out works (manual). Photo reply and duplicate payload are confirmed locally (2026-10-15). Still open: send a photo from a real phone after getting a fresh token and see the polite reply arrive.
 3. Real credentials are in .env and the real sender path works in the manual test.
 4. Nothing else to write for Phase 4: every file in the blueprint's Phase 4 list exists and has tests (payloads, client, sender, whatsapp_webhook, dev, worker, factories, integration and unit tests). media.py / media_upload.py are empty on purpose (Phases 6 and 7).
 5. Meta business verification (not started).
-6. Update this file, then git commit "phase 4: whatsapp text" and tag phase-4-done.
+6. DONE: this file is updated. By hand: git commit "phase 4: whatsapp text" and tag phase-4-done.
 
-## Phase 5: Language detection and response-language control (IN PROGRESS)
-Started while Phase 4 Step 6 is blocked. Tick each step when its checks pass.
+## Phase 5: Language detection and response-language control (DONE)
+All 6 steps ticked. Gate gap kept visible: router language match 92.8% vs the 95% target; the golden set still needs a native speaker.
 - [x] Step 1: language/lexicon.py + language/detect.py (script hint + lexicon scoring). Tests: tests/unit/language/test_detect.py. Done: ruff, mypy and `uv run pytest tests\unit\language` (47 passed on this PC). More Roman Urdu words were added to config/roman_urdu_lexicon.yaml; lexicon.py itself unchanged.
 - [x] Step 2: language/policy.py (reply-language table 6.1, sticky language, cheap output-language check from 6.2 layer 4). Tests: tests/unit/language/test_policy.py. Done: `uv run pytest tests\unit\language` (96 passed), mypy clean. Rules: two messages in a row switch the language; an unknown message changes nothing but breaks the run; LANGUAGE_STICKY_MESSAGES setting not used yet (SWITCH_AFTER = 2 in policy.py).
 - [x] Step 3: integrations/llm/{base, chat_factory, fake_llm}.py. Tests: tests/unit/llm/ (test_fake_llm.py, test_chat_factory.py). Done: pytest, ruff, mypy pass. LLM_PROVIDER=groq via langchain-openai (OpenAI-compatible base_url); empty/unknown provider = ConfigError; fake LLM in all unit tests, real Groq only in the eval job (Step 5); Ollama only later as judge/fallback. Needs in .env: LLM_PROVIDER, LLM_API_KEY, ROUTER_MODEL (GROQ_BASE_URL still to verify against Groq docs).
@@ -63,8 +64,25 @@ Started while Phase 4 Step 6 is blocked. Tick each step when its checks pass.
 - [x] Step 5: evals/router_golden.jsonl + app.cli eval-router. Tests T08, T09. Done: agent/router_eval.py (scoring + report), `eval-router` command in cli.py (with --limit), evals/router_golden.jsonl (69 cases, all synthetic-starter), tests/unit/agent/test_router_eval.py (T08, T09). Eval runs on Ollama (gpt-oss:120b-cloud, same family as the Groq router model) because Groq hit 429 rate limits: `uv run python -m app.cli eval-router` (default ollama; `--provider groq` for Groq; settings OLLAMA_BASE_URL, OLLAMA_API_KEY, EVAL_ROUTER_MODEL; chat_factory.get_eval_chat_model). Router prompt got Roman Urdu rule + 3 examples. Result: see Baselines measured. Still to do: native-speaker review of the golden set; get language match to 95% (5 of 6 wrong cases are roman_ur called mixed)
 - [x] Step 6: debug reply via /dev/simulate, first baseline in "Baselines measured". Done 2026-10-15: repo.load_state/save_state (db/repositories.py; language_step.py already called them but they did not exist), `debug_reply` setting (DEBUG_REPLY in .env, default false), worker.debug_language_reply + the switch in worker.handle_inbox, tests/integration/test_language_step.py (10 tests), test_worker_sender.py fixture pins debug_reply=False. pytest, ruff and mypy pass. Manual debug test on Groq via /dev/simulate matched the policy (see Baselines measured). Still to do by hand: `git commit -m "phase 5: language"` + `git tag phase-5-done`. WhatsApp live check of the debug reply waits for Phase 4 Step 6 (new token needed).
 
+## Phase 6: Voice messages and speech-to-text (IN PROGRESS)
+Started 2026-10-15 while the phone with WhatsApp is not available: all code and tests use FakeSTT and /dev/simulate, so no phone, token or STT key is needed to build it. ffmpeg 9.0.2 installed with winget (restart the shell so PATH updates). The tag phase-6-done waits for the bake-off (blueprint 6.6: at least 100 clips per class, native-speaker labels, provider + fallback chosen, thresholds in settings, Punjabi behaviour decided) and the live voice-note check.
+- [x] Step 1 (run, passes): integrations/speech/{base, fake_stt, factory}.py, `stt_fake_text` setting (STT_FAKE_TEXT, local development), tests/unit/voice/test_fake_stt.py. Real providers raise ConfigError until Step 5.
+- [x] Step 2 (run, passes): voice/gate.py (limits, empty/short, confidence, language, hallucination, router doubt, clarification messages EN/Roman Urdu), tests/unit/voice/test_gate.py (T22). Thresholds REPEAT_*, MAX_WORDS_PER_SECOND, ALLOWED_LANGUAGES are first guesses; the bake-off decides, then they move to settings. Whisper-style models may label Pakistani Urdu as Hindi ('hi'): measure it before allowing 'hi'.
+- [x] Step 3 (run: tests, ruff, mypy pass; Meta's real behaviour not yet checked, see below): integrations/whatsapp/media.py (download with caps and timeout, mime check, expired URL refetched once) + voice/convert.py (ffmpeg to WAV, temp file deleted in finally) + tests/unit/voice/test_media.py, test_convert.py
+- [x] Step 4 (4a and 4b run and pass; 4c written, run pending): 4a voice/pipeline.py (download+convert, limits, STT, gate; doubtful transcript is dropped) + tests/unit/voice/test_pipeline.py. 4b worker.handle_voice (clear transcript goes on like text, doubtful gets a clarification in the conversation language, only the transcript is kept) + tests/integration/test_worker_voice.py (T10, T11, T12, T22, T25, limits, provider failure, dev bypass). 4c /dev/simulate msg_type=audio (media id 'dev-media', worker skips download, STT_FAKE_TEXT is what it 'says') + tests/unit/voice/test_dev_audio.py. Not done on purpose: source='voice' is not carried yet (nothing reads it; Phase 9). Open: if the speech provider keeps failing, the message ends 'failed' and the customer gets no reply; decide in Step 5/6.
+- [x] Step 5a (written 2026-10-15, tests passed): integrations/speech/groq_stt.py (Groq Whisper, verbose_json, confidence from avg_logprob) + factory branch `groq` + tests/unit/voice/test_groq_stt.py. openai/google/elevenlabs/faster_whisper adapters are NOT written on purpose (project uses Groq; OpenAI later needs an ADR).
+- [x] Step 5b (written and checked 2026-10-15: pytest, ruff, mypy pass; the real bake-off RUN belongs to Step 6 and needs clips): voice/scoring.py (WER, CER, script, latency percentiles, summary) + tests/unit/voice/test_scoring.py + scripts/bakeoff.py + evals/voice_manifest.csv (header only: file,class,reference,intent,noisy). Run: `uv run pytest tests\unit\voice\test_scoring.py`, then `uv run python scripts\bakeoff.py --limit 3` once a few clips exist in data\audio. Compare whisper-large-v3 and whisper-large-v3-turbo (default --providers). Reference text must be in the SAME script the provider returns.
+- [ ] Step 6: bake-off report, provider + fallback chosen, thresholds in settings, Punjabi decision, live voice-note check, commit + tag phase-6-done
+
+## Waiting for the phone (code is written, live check not done yet)
+The user said (2026-10-15): the phone with WhatsApp is not with me now; write the code first, test live when I say so. Do NOT mark these as done before that.
+1. Fresh WhatsApp token in .env (the temporary one lasts about 24 hours); later a System User permanent token.
+2. A real voice note through Meta: real download (token + media url that lives about 5 minutes), real ogg/opus through ffmpeg, check what Meta does with an expired url (media.py refetches once; marked VERIFY), then check the temp folder (wa-audio-*) is empty afterwards. With STT_PROVIDER=fake the reply shows only STT_FAKE_TEXT; a real transcript needs a Step 5 provider and its key in .env.
+3. Bake-off clips (blueprint 6.6): at least 100 per class (Urdu, Punjabi, English with Pakistani accent, Urdu-English mixed), recorded on a phone, some noisy, 3 to 30 seconds, about watches; a native speaker labels them; keep them out of Git (data/audio/); list them in evals/voice_manifest.csv.
+4. Phase 4 leftover: a photo from a real phone gets the polite reply.
+
 ## Not started yet
-Phase 6 voice | 7 images | 8 RAG | 9 LangGraph | 10 sync | 11 security + handoff | 12 evals | 13 AWS | 14 acceptance
+Phase 7 images | 8 RAG | 9 LangGraph | 10 sync | 11 security + handoff | 12 evals | 13 AWS | 14 acceptance
 
 ## Already written (stable code, will not change)
 - core/settings.py, core/logging.py (JSON + redaction + correlation id), core/errors.py,

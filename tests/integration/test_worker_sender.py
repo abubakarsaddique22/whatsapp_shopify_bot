@@ -78,9 +78,7 @@ async def queue_reply(session: AsyncSession) -> None:
 
 
 async def inbox_status(session: AsyncSession, inbox_id: int) -> str:
-    result = await session.execute(
-        select(WhatsAppInbox.status).where(WhatsAppInbox.id == inbox_id)
-    )
+    result = await session.execute(select(WhatsAppInbox.status).where(WhatsAppInbox.id == inbox_id))
     return result.scalar_one()
 
 

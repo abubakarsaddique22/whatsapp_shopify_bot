@@ -1,9 +1,9 @@
 """Try product search on the REAL mirror (read-only). Run import-catalog first.
 
-    set PYTHONPATH=src
-    uv run python scripts\\search_probe.py "ga2100"
-    uv run python scripts\\search_probe.py "black casio" --max-price 10000
-    uv run python scripts\\search_probe.py "g shock" --colour kala --size 44
+set PYTHONPATH=src
+uv run python scripts\\search_probe.py "ga2100"
+uv run python scripts\\search_probe.py "black casio" --max-price 10000
+uv run python scripts\\search_probe.py "g shock" --colour kala --size 44
 """
 
 import argparse

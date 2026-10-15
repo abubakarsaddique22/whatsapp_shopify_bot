@@ -90,6 +90,27 @@ class TranscriptionError(ProviderError):
     code = "transcription_error"
 
 
+class UnsupportedMedia(AppError):
+    """The customer sent a media file we do not accept (wrong type). The bot asks politely."""
+
+    status_code = 415
+    code = "unsupported_media"
+
+
+class MediaTooLarge(AppError):
+    """The media file is bigger than MAX_AUDIO_BYTES. Nothing was kept."""
+
+    status_code = 413
+    code = "media_too_large"
+
+
+class AudioConversionError(AppError):
+    """ffmpeg could not turn the audio into WAV (damaged file, unknown format, timeout)."""
+
+    status_code = 422
+    code = "audio_conversion_error"
+
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:

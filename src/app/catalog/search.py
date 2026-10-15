@@ -248,7 +248,10 @@ async def search_products(
             v.id
             for v in own
             if variant_matches(
-                v, colour=variant_colour, size_mm=size_mm, max_price=max_price,
+                v,
+                colour=variant_colour,
+                size_mm=size_mm,
+                max_price=max_price,
                 product_title=row.title,
             )
         ]

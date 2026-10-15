@@ -1,6 +1,6 @@
 """Tests against the real Shopify dev store (read-only). Skipped unless you ask for them:
 
-    $env:RUN_LIVE="1"; uv run pytest tests\\live -m live -v
+$env:RUN_LIVE="1"; uv run pytest tests\\live -m live -v
 """
 
 import os

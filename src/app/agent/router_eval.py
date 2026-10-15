@@ -96,9 +96,7 @@ def _right(rows: list[CaseResult], field: str) -> float | None:
 def summarize(results: list[CaseResult]) -> dict[str, Any]:
     total = len(results)
     with_color = [r for r in results if r.case.color or r.got.color]
-    with_price = [
-        r for r in results if r.case.max_price is not None or r.got.max_price is not None
-    ]
+    with_price = [r for r in results if r.case.max_price is not None or r.got.max_price is not None]
 
     groups: defaultdict[str, list[CaseResult]] = defaultdict(list)
     for r in results:

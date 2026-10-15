@@ -143,4 +143,3 @@ def parse_mm(text: str) -> int | None:
         return None
     size = int(match.group(1))
     return size if MIN_CASE_MM <= size <= MAX_CASE_MM else None
-

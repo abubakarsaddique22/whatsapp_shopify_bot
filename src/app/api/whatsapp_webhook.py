@@ -84,9 +84,7 @@ async def receive(
     for status in parsed.statuses:
         if status.status == "failed":
             log.warning("whatsapp_delivery_failed", extra={"meta_code": status.error_code})
-            await repositories.mark_outbox_failed_by_wamid(
-                session, status.wamid, status.error_code
-            )
+            await repositories.mark_outbox_failed_by_wamid(session, status.wamid, status.error_code)
 
     await session.commit()
     log.info(

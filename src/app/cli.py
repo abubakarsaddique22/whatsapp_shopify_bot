@@ -1,12 +1,12 @@
 """Command line helpers. Run from the project folder:
 
-    uv run python -m app.cli shopify-ping
-    uv run python -m app.cli import-catalog
-    uv run python -m app.cli ask "GA-2100 ka price?"
-    uv run python -m app.cli ask "is it water resistant" --debug
-    uv run python -m app.cli eval-router
-    uv run python -m app.cli eval-router --limit 10
-    uv run python -m app.cli eval-router --provider groq
+uv run python -m app.cli shopify-ping
+uv run python -m app.cli import-catalog
+uv run python -m app.cli ask "GA-2100 ka price?"
+uv run python -m app.cli ask "is it water resistant" --debug
+uv run python -m app.cli eval-router
+uv run python -m app.cli eval-router --limit 10
+uv run python -m app.cli eval-router --provider groq
 """
 
 import argparse

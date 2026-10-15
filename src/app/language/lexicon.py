@@ -42,5 +42,5 @@ def get_lexicon(path: Path = LEXICON_PATH) -> Lexicon:
         # Typical cause: a YAML word like on / no / yes / off is read as a boolean.
         # Fix: put such words in quotes, for example "on".
         raise ConfigError(
-            f"{path.name} has an invalid entry (quote words like \"on\" or \"no\" in YAML)"
+            f'{path.name} has an invalid entry (quote words like "on" or "no" in YAML)'
         ) from exc

@@ -17,6 +17,9 @@ __pycache__/
 *.wav
 *.opus
 *.mp3
+*.m4a
+*.aac
+*.amr
 data/audio/
 
 # os / editor

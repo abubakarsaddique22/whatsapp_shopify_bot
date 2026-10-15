@@ -216,8 +216,7 @@ def _name(data: dict[str, Any]) -> str:
 def _colour_note(data: dict[str, Any], parsed: Parsed) -> str:
     if data.get("colour_unverified") and parsed.colour:
         return (
-            " Note: the colours of this model are not listed,"
-            f" so I cannot confirm {parsed.colour}."
+            f" Note: the colours of this model are not listed, so I cannot confirm {parsed.colour}."
         )
     return ""
 

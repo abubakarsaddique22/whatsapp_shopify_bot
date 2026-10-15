@@ -1,7 +1,7 @@
 """Debug helper: shows why products are (not) customer-visible. Read-only.
 
-    set PYTHONPATH=src
-    uv run python scripts\\debug_products.py
+set PYTHONPATH=src
+uv run python scripts\\debug_products.py
 """
 
 import asyncio

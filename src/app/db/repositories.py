@@ -105,9 +105,7 @@ async def get_or_create_conversation(session: AsyncSession, wa_id: str, wa_id_ha
     stmt = (
         insert(Conversation)
         .values(wa_id=wa_id, wa_id_hash=wa_id_hash, state={}, last_inbound_at=func.now())
-        .on_conflict_do_update(
-            index_elements=["wa_id"], set_={"last_inbound_at": func.now()}
-        )
+        .on_conflict_do_update(index_elements=["wa_id"], set_={"last_inbound_at": func.now()})
         .returning(Conversation.id)
     )
     return (await session.execute(stmt)).scalar_one()
@@ -282,9 +280,7 @@ async def load_state(session: AsyncSession, conversation_id: int) -> Conversatio
     return ConversationState.model_validate(data)
 
 
-async def save_state(
-    session: AsyncSession, conversation_id: int, state: ConversationState
-) -> None:
+async def save_state(session: AsyncSession, conversation_id: int, state: ConversationState) -> None:
     """Save the state as JSON and keep conversations.lang in step with state.language."""
     await session.execute(
         update(Conversation)

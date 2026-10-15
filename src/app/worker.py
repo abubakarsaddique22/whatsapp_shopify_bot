@@ -14,15 +14,20 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agent.language_step import format_debug_reply, run_language_step
-from app.core.errors import AppError
+from app.core.errors import AppError, UnsupportedMedia
 from app.core.logging import setup_logging
-from app.core.settings import get_settings
+from app.core.settings import Settings, get_settings
 from app.db import repositories as repo
 from app.db.session import get_engine, get_sessionmaker
 from app.db.tables import WhatsAppInbox
 from app.integrations.llm.base import ChatModel
 from app.integrations.llm.chat_factory import get_chat_model
+from app.integrations.speech.factory import get_stt_provider
 from app.integrations.whatsapp.sender import send_one
+from app.language.policy import reply_language
+from app.voice.convert import prepared_audio
+from app.voice.gate import clarification_message
+from app.voice.pipeline import VoiceOutcome, dev_prepared_audio, transcribe_voice_note
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +46,8 @@ def handle_message(msg_type: str, text: str | None) -> list[str]:
     """Decide the replies for one inbound message. Returns one or more reply texts."""
     if msg_type == "text" and text:
         return handle_text(text)
-    # Phase 6 adds an 'audio' branch here. Images, stickers and the rest stay unsupported.
+    # Voice notes (audio with a media id) do not come here: handle_voice does them.
+    # Images, stickers and the rest stay unsupported, and so does audio without a media id.
     return [UNSUPPORTED_REPLY]
 
 
@@ -63,6 +69,55 @@ async def debug_language_reply(
     return format_debug_reply(result)
 
 
+async def voice_outcome(media_id: str, settings: Settings) -> VoiceOutcome:
+    """Download, convert and transcribe one voice note, then run the confidence gate.
+
+    Local development: with APP_ENV=local, STT_PROVIDER=fake and a media id that starts with
+    'dev-' (what /dev/simulate sends) nothing is downloaded and the fake STT answers with
+    STT_FAKE_TEXT. A real voice note from a phone always takes the real path.
+    """
+    is_dev_note = (
+        settings.app_env == "local"
+        and settings.stt_provider == "fake"
+        and media_id.startswith("dev-")
+    )
+    return await transcribe_voice_note(
+        media_id,
+        get_stt_provider(settings),
+        max_bytes=settings.max_audio_bytes,
+        max_seconds=settings.max_audio_seconds,
+        min_words=settings.stt_min_words,
+        min_confidence=settings.stt_min_confidence,
+        prepare=dev_prepared_audio if is_dev_note else prepared_audio,
+    )
+
+
+async def handle_voice(
+    session: AsyncSession, inbox: WhatsAppInbox, media_id: str, settings: Settings
+) -> tuple[str, list[str]]:
+    """One voice note -> (what to keep in the transcript, the replies).
+
+    A clear transcript goes on like a typed message. A doubtful one gets a polite request to
+    repeat, in the conversation's language, and nothing is answered from it. Only the transcript
+    is kept, never the audio (blueprint 6.9).
+    """
+    try:
+        outcome = await voice_outcome(media_id, settings)
+    except UnsupportedMedia:
+        return "[audio]", [UNSUPPORTED_REPLY]  # the file is not audio at all
+
+    transcript = outcome.transcript
+    if transcript is None:
+        state = await repo.load_state(session, inbox.conversation_id)
+        language = reply_language(state.language, urdu_script_replies=settings.urdu_script_replies)
+        return "[voice: unclear]", [clarification_message(outcome.reason, language)]
+
+    if settings.debug_reply:
+        reply = await debug_language_reply(session, inbox.conversation_id, transcript.text)
+        return transcript.text, [reply]
+    return transcript.text, handle_text(transcript.text)
+
+
 async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> None:
     """Do the work for one claimed inbound message. The caller commits."""
     settings = get_settings()
@@ -71,12 +126,15 @@ async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> None:
         log.warning("kill_switch_on", extra={"inbox_id": inbox.id})
         return
 
-    await repo.add_message(
-        session, inbox.conversation_id, "in", inbox.text or f"[{inbox.msg_type}]", inbox.wamid
-    )
-    replies = handle_message(inbox.msg_type, inbox.text)
-    if settings.debug_reply and inbox.msg_type == "text" and inbox.text:
-        replies = [await debug_language_reply(session, inbox.conversation_id, inbox.text)]
+    if inbox.msg_type == "audio" and inbox.media_id:
+        kept, replies = await handle_voice(session, inbox, inbox.media_id, settings)
+    else:
+        kept = inbox.text or f"[{inbox.msg_type}]"
+        replies = handle_message(inbox.msg_type, inbox.text)
+        if settings.debug_reply and inbox.msg_type == "text" and inbox.text:
+            replies = [await debug_language_reply(session, inbox.conversation_id, inbox.text)]
+
+    await repo.add_message(session, inbox.conversation_id, "in", kept, inbox.wamid)
     for seq, body in enumerate(replies):
         await repo.add_outbox(session, inbox.conversation_id, inbox.id, seq, body)
     await repo.finish_inbox(session, inbox.id, "done")

@@ -58,8 +58,14 @@ class Settings(BaseSettings):
     # speech
     stt_provider: str = "fake"
     stt_api_key: SecretStr = SecretStr("")
+    # Groq Whisper: whisper-large-v3-turbo (cheaper, faster) or whisper-large-v3 (more accurate).
+    # The bake-off decides which one stays; STT_API_KEY can be the same Groq key as LLM_API_KEY.
+    stt_model: str = "whisper-large-v3-turbo"
+    stt_timeout_seconds: int = 30
     stt_min_confidence: float = 0.0
     stt_min_words: int = 2
+    # local development only: with STT_PROVIDER=fake every voice note "says" this text
+    stt_fake_text: str = ""
 
     # embeddings / rag
     embedding_provider: str = "fake"
