@@ -7,7 +7,7 @@ that needs audio and a provider.
 
     uv run python scripts\\bakeoff.py --limit 3
     uv run python scripts\\bakeoff.py --providers groq:whisper-large-v3,groq:whisper-large-v3-turbo
-    uv run python scripts\\bakeoff.py --router            (also scores intent; needs LLM_* in .env)
+    uv run python scripts\\bakeoff.py --router            (also scores intent; judged by Ollama)
     uv run python scripts\\bakeoff.py --class punjabi
 
 Folders:
@@ -38,7 +38,7 @@ from app.agent.router import route_intent
 from app.core.errors import AppError, AudioConversionError, ConfigError, TranscriptionError
 from app.core.settings import Settings, get_settings
 from app.integrations.llm.base import ChatModel
-from app.integrations.llm.chat_factory import get_chat_model
+from app.integrations.llm.chat_factory import get_eval_chat_model
 from app.integrations.speech.base import SpeechToTextProvider
 from app.integrations.speech.groq_stt import GroqSTT
 from app.voice.convert import convert_to_wav
@@ -199,7 +199,7 @@ async def run(args: argparse.Namespace) -> int:
         return 1
 
     providers = build_providers(args.providers, settings)
-    llm = get_chat_model("router", settings) if args.router else None
+    llm = get_eval_chat_model(settings) if args.router else None  # eval -> Ollama
 
     results: list[ClipResult] = []
     for index, row in enumerate(rows, start=1):

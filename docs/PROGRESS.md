@@ -12,6 +12,11 @@
 | 6 | Voice messages + speech-to-text | IN PROGRESS: Steps 1 to 4 done and tested with fakes (4c written, run pending). Step 5 (real providers, bake-off script) next. Live voice-note check, bake-off clips and the tag wait for the phone, see 'Waiting for the phone' below |
 | 7 to 14 | Images, RAG, LangGraph, sync, security, evals, AWS, acceptance | NOT STARTED |
 
+## Model rule (decided 2026-10-15, ADR 0002)
+- Eval / judge work (`app.cli eval-router`, `scripts\bakeoff.py --router`, later Phase 12 LLM-as-judge) -> Ollama, through `get_eval_chat_model()` in `integrations/llm/chat_factory.py`.
+- Everything the app does (router, composer, STT) -> Groq. No `judge.py` exists; the eval helper is `get_eval_chat_model()`.
+- Before go-live or after a prompt/model change: run the golden set once on Groq (`eval-router --provider groq`) so the production model is checked too.
+
 ## Current phase
 Phase 4 and Phase 5 are finished (Phase 5: all 6 steps; full pytest, ruff and mypy passed on 2026-10-15, DEBUG_REPLY set back to false). Next: commit + tag phase-4-done and phase-5-done, then Phase 6 (voice). Before Phase 6 is live-tested: new WhatsApp token (the temporary one expired, HTTP 401 code 190) and the photo-from-a-real-phone check. Open: router language match is 92.8% vs the 95% target (model calls short Urdu-grammar questions with English nouns 'mixed'), and the 69 golden cases need a native speaker.
 

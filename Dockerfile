@@ -15,3 +15,6 @@ ENV PATH="/app/.venv/bin:$PATH" PYTHONPATH="/app/src"
 HEALTHCHECK CMD python -c "import urllib.request as u; u.urlopen('http://localhost:8000/healthz')"
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
+
+
+ 
