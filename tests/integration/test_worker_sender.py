@@ -19,6 +19,7 @@ from app.core.errors import WhatsAppError, WhatsAppTemporaryError
 from app.core.settings import Settings, get_settings
 from app.db import repositories as repo
 from app.db.tables import Message, WhatsAppInbox, WhatsAppOutbox
+from app.integrations.llm.fake_llm import FakeLLM
 from app.integrations.whatsapp import sender
 from app.integrations.whatsapp.payloads import InboundMessage
 
@@ -47,6 +48,8 @@ def _kill_switch_off(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         worker, "get_settings", lambda: Settings(kill_switch=False, debug_reply=False)
     )
+    # the router now looks at every text: an empty FakeLLM makes it answer 'unclear' (no network)
+    monkeypatch.setattr(worker, "get_chat_model", lambda role="router": FakeLLM([]))
 
 
 # ---- helpers

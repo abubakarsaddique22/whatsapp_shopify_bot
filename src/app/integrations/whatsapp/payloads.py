@@ -160,6 +160,25 @@ def parse_webhook(payload: dict[str, Any]) -> ParsedWebhook:
 # ---- Outbound
 
 
+def build_image_payload(
+    to: str, *, link: str | None = None, media_id: str | None = None, caption: str | None = None
+) -> dict[str, Any]:
+    """Body for sending a picture: either a public `link` (Meta fetches it) or an uploaded
+    `media_id`. Exactly one of them. The caption is left out when empty."""
+    if (link is None) == (media_id is None):
+        raise ValueError("give exactly one of link or media_id")
+    image: dict[str, str] = {"link": link} if link is not None else {"id": media_id or ""}
+    if caption:
+        image["caption"] = caption
+    return {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "image",
+        "image": image,
+    }
+
+
 def build_text_payload(to: str, body: str) -> dict[str, Any]:
     """Body for POST /{phone_number_id}/messages."""
     return {

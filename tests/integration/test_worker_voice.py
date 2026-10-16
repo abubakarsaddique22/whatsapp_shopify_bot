@@ -73,6 +73,9 @@ def use_settings(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> None:
         **overrides,
     }
     monkeypatch.setattr(worker, "get_settings", lambda: Settings(**values))
+    # the router looks at every text now: an empty FakeLLM answers 'unclear' (no network). A test
+    # that needs real router answers patches worker.get_chat_model again after this call.
+    monkeypatch.setattr(worker, "get_chat_model", lambda role="router": FakeLLM([]))
 
 
 def use_voice(

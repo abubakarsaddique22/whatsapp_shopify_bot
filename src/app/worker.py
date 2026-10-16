@@ -13,6 +13,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.agent.image_flow import Reply, run_image_flow
 from app.agent.language_step import format_debug_reply, run_language_step
 from app.core.errors import AppError, UnsupportedMedia
 from app.core.logging import setup_logging
@@ -20,6 +21,7 @@ from app.core.settings import Settings, get_settings
 from app.db import repositories as repo
 from app.db.session import get_engine, get_sessionmaker
 from app.db.tables import WhatsAppInbox
+from app.domain.models import Intent
 from app.integrations.llm.base import ChatModel
 from app.integrations.llm.chat_factory import get_chat_model
 from app.integrations.speech.factory import get_stt_provider
@@ -69,6 +71,29 @@ async def debug_language_reply(
     return format_debug_reply(result)
 
 
+async def reply_to_text(
+    session: AsyncSession, conversation_id: int, text: str, settings: Settings
+) -> list[Reply]:
+    """Phase 7: the router looks at every customer text (a typed message or a voice transcript).
+
+    image_request goes to the image flow (it returns text and picture replies). Every other
+    intent keeps the old behaviour until Phase 9: the debug reply when DEBUG_REPLY=true,
+    otherwise the placeholder "Received". The router runs once per message.
+    """
+    result = await run_language_step(
+        session,
+        conversation_id,
+        text,
+        get_chat_model("router"),
+        urdu_script_replies=settings.urdu_script_replies,
+    )
+    if result.router.intent == Intent.IMAGE_REQUEST:
+        return await run_image_flow(session, conversation_id, result.router, text)
+    if settings.debug_reply:
+        return [Reply(format_debug_reply(result))]
+    return [Reply(body) for body in handle_text(text)]
+
+
 async def voice_outcome(media_id: str, settings: Settings) -> VoiceOutcome:
     """Download, convert and transcribe one voice note, then run the confidence gate.
 
@@ -94,7 +119,7 @@ async def voice_outcome(media_id: str, settings: Settings) -> VoiceOutcome:
 
 async def handle_voice(
     session: AsyncSession, inbox: WhatsAppInbox, media_id: str, settings: Settings
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[Reply]]:
     """One voice note -> (what to keep in the transcript, the replies).
 
     A clear transcript goes on like a typed message. A doubtful one gets a polite request to
@@ -104,18 +129,17 @@ async def handle_voice(
     try:
         outcome = await voice_outcome(media_id, settings)
     except UnsupportedMedia:
-        return "[audio]", [UNSUPPORTED_REPLY]  # the file is not audio at all
+        return "[audio]", [Reply(UNSUPPORTED_REPLY)]  # the file is not audio at all
 
     transcript = outcome.transcript
     if transcript is None:
         state = await repo.load_state(session, inbox.conversation_id)
         language = reply_language(state.language, urdu_script_replies=settings.urdu_script_replies)
-        return "[voice: unclear]", [clarification_message(outcome.reason, language)]
+        return "[voice: unclear]", [Reply(clarification_message(outcome.reason, language))]
 
-    if settings.debug_reply:
-        reply = await debug_language_reply(session, inbox.conversation_id, transcript.text)
-        return transcript.text, [reply]
-    return transcript.text, handle_text(transcript.text)
+    return transcript.text, await reply_to_text(
+        session, inbox.conversation_id, transcript.text, settings
+    )
 
 
 async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> None:
@@ -130,13 +154,23 @@ async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> None:
         kept, replies = await handle_voice(session, inbox, inbox.media_id, settings)
     else:
         kept = inbox.text or f"[{inbox.msg_type}]"
-        replies = handle_message(inbox.msg_type, inbox.text)
-        if settings.debug_reply and inbox.msg_type == "text" and inbox.text:
-            replies = [await debug_language_reply(session, inbox.conversation_id, inbox.text)]
+        if inbox.msg_type == "text" and inbox.text:
+            replies = await reply_to_text(session, inbox.conversation_id, inbox.text, settings)
+        else:  # image, sticker, empty text...: the polite unsupported-type reply
+            replies = [Reply(body) for body in handle_message(inbox.msg_type, inbox.text)]
 
     await repo.add_message(session, inbox.conversation_id, "in", kept, inbox.wamid)
-    for seq, body in enumerate(replies):
-        await repo.add_outbox(session, inbox.conversation_id, inbox.id, seq, body)
+    for seq, reply in enumerate(replies):
+        await repo.add_outbox(
+            session,
+            inbox.conversation_id,
+            inbox.id,
+            seq,
+            reply.body,
+            kind=reply.kind,
+            media_url=reply.media_url,
+            caption=reply.caption,
+        )
     await repo.finish_inbox(session, inbox.id, "done")
 
 

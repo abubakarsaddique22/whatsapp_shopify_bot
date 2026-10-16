@@ -16,7 +16,7 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | 4 | WhatsApp text: webhook, inbox/outbox, worker, `/dev/simulate` | Done, tag phase-4-done (sirf real phone se photo check baqi) |
 | 5 | Language detection, router, reply-language policy, debug reply | Done (router language match 92.8%, target 95%) |
 | 6 | Voice: fake STT, Groq Whisper adapter, media download + ffmpeg, voice gate, `/dev/simulate` audio, bake-off script | Steps 1 se 5 done (tests pass). Step 6 (bake-off, live voice-note check) phone aur token ka intezar |
-| 7 | Product images: JPEG conversion (AVIF/WebP), image resolver | Steps 1 se 2 done. Step 3 (WhatsApp image bhejna) agla hai. Live check phone ka intezar |
+| 7 | Product images: image resolver, JPEG conversion (AVIF/WebP), WhatsApp image bhejna (link ya upload), image flow (`image_request`), text-link fallback | Steps 1 se 5 done (T05, T23, T24 pass, fakes ke saath). Asli phone par images ka live check phone aur token ka intezar |
 | 8 se 14 | RAG, LangGraph, sync, security, evals, AWS, acceptance | Shuru nahi hue |
 
 ## Code ka naqsha (`src/app/`)
@@ -27,13 +27,13 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | `db/` | Async session, tables, repositories (mirror, inbox/outbox, conversation state) |
 | `domain/` | Pydantic models: Lang, Intent, RouterOutput, BotResponse, ConversationState |
 | `integrations/shopify/` | Read-only Shopify GraphQL gateway |
-| `integrations/whatsapp/` | Meta payloads, client, sender (real aur fake), media download |
+| `integrations/whatsapp/` | Meta payloads, client (text aur image), sender (retry rules, image fallback), media download, `media_upload.py` (image upload) |
 | `integrations/llm/` | Chat model factory (Groq), FakeLLM tests ke liye |
 | `integrations/speech/` | Speech-to-text: FakeSTT, Groq Whisper adapter, factory |
 | `voice/` | Voice gate (confidence, limits, hallucination check), ffmpeg convert, pipeline, scoring (WER/CER) |
 | `catalog/` | Normalizer, search (pg_trgm), price, stock, specs, images, `image_formats` (JPEG rendition), importer |
 | `language/` | Roman Urdu lexicon, detection, price parser, language policy (table 6.1) |
-| `agent/` | `router.py` (intent + language), `language_step.py`, `tools.py`, `rules.py`, `router_eval.py` |
+| `agent/` | `router.py` (intent + language), `language_step.py`, `image_flow.py` (image_request ka jawab), `tools.py`, `rules.py`, `router_eval.py` |
 | `api/` | `/healthz`, `/readyz`, WhatsApp webhook, `/dev/*` (sirf local) |
 | `worker.py` | Inbound message uthata hai, jawab outbox mein daalta hai, bhejta hai |
 | `cli.py` | `ask`, `import-catalog`, `eval-router` |
@@ -99,6 +99,18 @@ mein likhe hon:
 ```
 uv run python scripts\bakeoff.py --limit 3
 ```
+
+## Images ko local test karna (phone ke baghair)
+Ab router har customer text par chalta hai (sirf debug mode mein nahi), is liye `.env` mein
+`LLM_PROVIDER`, `LLM_API_KEY` aur `ROUTER_MODEL` hona zaroori hai, warna worker message ko `failed` kar deta hai.
+```
+uv run pytest tests\unit\catalog\test_images.py tests\unit\catalog\test_image_formats.py
+uv run pytest tests\integration\test_image_flow.py tests\integration\test_sender_images.py
+```
+Image flow: router `image_request` deta hai, product dhoondta hai (ambiguous ho to ek sawal), phir
+zyada se zyada 3 pictures outbox mein jaate hain. Sender pehle JPEG link bhejta hai, Meta mana kare to
+download + upload karta hai, phir bhi na jaye to product ka text link bhejta hai aur failure log mein likhta hai.
+Bina image wale product par "picture nahi hai" aur link jata hai. Asli images ka check phone aur naye token ke baad.
 
 ## Qaide
 - `.env` kabhi Git ya chat mein na dalein.

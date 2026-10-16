@@ -172,7 +172,10 @@ class WhatsAppOutbox(Base):
         ForeignKey("whatsapp_inbox.id", ondelete="SET NULL")
     )
     seq: Mapped[int] = mapped_column(Integer, default=0)
-    body: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)  # the text to send; for an image row, the text fallback
+    kind: Mapped[str] = mapped_column(String(16), default="text", server_default="text")
+    media_url: Mapped[str | None] = mapped_column(Text)  # image rows only: the picture URL
+    caption: Mapped[str | None] = mapped_column(Text)  # image rows only: short caption
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(Text)

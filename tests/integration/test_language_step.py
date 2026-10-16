@@ -172,6 +172,7 @@ async def test_worker_without_the_switch_still_says_received(
     monkeypatch.setattr(
         worker, "get_settings", lambda: Settings(kill_switch=False, debug_reply=False)
     )
+    monkeypatch.setattr(worker, "get_chat_model", lambda role="router": FakeLLM([]))  # no network
     cid = await new_conversation(session)
     msg = InboundMessage(
         wamid=f"wamid.test-{uuid.uuid4().hex[:12]}", wa_id=WA_ID, msg_type="text", text="hello"

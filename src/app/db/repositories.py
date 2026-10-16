@@ -191,7 +191,15 @@ async def record_inbox_failure(
 
 
 async def add_outbox(
-    session: AsyncSession, conversation_id: int, inbox_id: int, seq: int, body: str
+    session: AsyncSession,
+    conversation_id: int,
+    inbox_id: int,
+    seq: int,
+    body: str,
+    *,
+    kind: str = "text",
+    media_url: str | None = None,
+    caption: str | None = None,
 ) -> None:
     """Queue one reply. (inbox_id, seq) is unique, so a retry never queues the same reply twice."""
     stmt = (
@@ -200,6 +208,9 @@ async def add_outbox(
             conversation_id=conversation_id,
             inbox_id=inbox_id,
             seq=seq,
+            kind=kind,
+            media_url=media_url,
+            caption=caption,
             body=body,
             status="pending",
             attempts=0,
@@ -217,6 +228,7 @@ async def claim_outbox(session: AsyncSession) -> WhatsAppOutbox | None:
         .order_by(WhatsAppOutbox.id)
         .limit(1)
         .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
 
@@ -248,6 +260,27 @@ async def record_outbox_failure(
         update(WhatsAppOutbox)
         .where(WhatsAppOutbox.id == outbox_id)
         .values(attempts=WhatsAppOutbox.attempts + 1, last_error=error[:500], status=status)
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def downgrade_outbox_to_text(session: AsyncSession, outbox_id: int, reason: str) -> None:
+    """The picture could not be delivered: turn the row into its plain-text fallback.
+
+    The row goes back to 'pending' with a fresh attempt count, so the normal text retry rules
+    apply to the fallback. `reason` is kept in last_error (no phone number, no token).
+    """
+    await session.execute(
+        update(WhatsAppOutbox)
+        .where(WhatsAppOutbox.id == outbox_id)
+        .values(
+            kind="text",
+            media_url=None,
+            caption=None,
+            status="pending",
+            attempts=0,
+            last_error=f"image fallback: {reason}"[:500],
+        )
         .execution_options(synchronize_session=False)
     )
 

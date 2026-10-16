@@ -1,9 +1,10 @@
-"""WhatsApp Cloud API client: send one text message.
+"""WhatsApp Cloud API client: send one text message or one picture.
 
-One function: `send_text()`. It retries a few times on timeouts, HTTP 429 and 5xx (waiting 1s,
-then 2s). Any other error (400, 401, 403...) is permanent: retrying will not help, so it raises
-WhatsAppError at once. The Meta error code (for example 131031) goes into `exc.detail`.
-Never log the phone number or the access token.
+Two functions: `send_text()` and `send_image()` (by public link or by an uploaded media id, see
+media_upload.py). They share one sending loop. It retries a few times on timeouts, HTTP 429 and
+5xx (waiting 1s, then 2s). Any other error (400, 401, 403...) is permanent: retrying will not
+help, so it raises WhatsAppError at once. The Meta error code (for example 131031) goes into
+`exc.detail`. Never log the phone number or the access token.
 """
 
 import asyncio
@@ -14,7 +15,7 @@ import httpx
 
 from app.core.errors import ConfigError, WhatsAppError, WhatsAppTemporaryError
 from app.core.settings import get_settings
-from app.integrations.whatsapp.payloads import build_text_payload
+from app.integrations.whatsapp.payloads import build_image_payload, build_text_payload
 
 log = logging.getLogger(__name__)
 
@@ -34,8 +35,8 @@ async def _post(url: str, payload: dict[str, Any], token: str) -> httpx.Response
         return await http.post(url, json=payload, headers={"Authorization": f"Bearer {token}"})
 
 
-async def send_text(to: str, body: str) -> str:
-    """Send a text message and return its wamid."""
+async def _send_message(payload: dict[str, Any]) -> str:
+    """POST one message body to Meta (with the retry rules above) and return its wamid."""
     s = get_settings()
     token = s.whatsapp_access_token.get_secret_value()
     if not (s.meta_graph_version and s.whatsapp_phone_number_id and token):
@@ -44,7 +45,6 @@ async def send_text(to: str, body: str) -> str:
         )
 
     url = f"https://graph.facebook.com/{s.meta_graph_version}/{s.whatsapp_phone_number_id}/messages"
-    payload = build_text_payload(to, body)
     last_error = WhatsAppTemporaryError("WhatsApp request failed")
 
     for attempt in range(MAX_ATTEMPTS):
@@ -77,3 +77,18 @@ async def send_text(to: str, body: str) -> str:
             raise WhatsAppError("WhatsApp answer had no message id") from exc
 
     raise last_error
+
+
+async def send_text(to: str, body: str) -> str:
+    """Send a text message and return its wamid."""
+    return await _send_message(build_text_payload(to, body))
+
+
+async def send_image(
+    to: str, *, link: str | None = None, media_id: str | None = None, caption: str | None = None
+) -> str:
+    """Send a picture and return its wamid. Give a public `link` (Meta downloads it) or a
+    `media_id` from media_upload.upload_image(), never both."""
+    return await _send_message(
+        build_image_payload(to, link=link, media_id=media_id, caption=caption)
+    )
