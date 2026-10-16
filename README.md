@@ -17,7 +17,8 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | 5 | Language detection, router, reply-language policy, debug reply | Done (router language match 92.8%, target 95%) |
 | 6 | Voice: fake STT, Groq Whisper adapter, media download + ffmpeg, voice gate, `/dev/simulate` audio, bake-off script | Steps 1 se 5 done (tests pass). Step 6 (bake-off, live voice-note check) phone aur token ka intezar |
 | 7 | Product images: image resolver, JPEG conversion (AVIF/WebP), WhatsApp image bhejna (link ya upload), image flow (`image_request`), text-link fallback | Steps 1 se 5 done (T05, T23, T24 pass, fakes ke saath). Asli phone par images ka live check phone aur token ka intezar |
-| 8 se 14 | RAG, LangGraph, sync, security, evals, AWS, acceptance | Shuru nahi hue |
+| 8 | RAG: policies/FAQ ko chunk karna, local embeddings (sentence-transformers, `BAAI/bge-m3`), pgvector index, hybrid retrieval, `rag-ingest` / `rag-search` / `rag-eval` | Steps 1 se 7 bane (tests pass). Step 8 (baseline, commit + tag) baqi |
+| 9 se 14 | LangGraph, sync, security, evals, AWS, acceptance | Shuru nahi hue |
 
 ## Code ka naqsha (`src/app/`)
 
@@ -29,6 +30,8 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | `integrations/shopify/` | Read-only Shopify GraphQL gateway |
 | `integrations/whatsapp/` | Meta payloads, client (text aur image), sender (retry rules, image fallback), media download, `media_upload.py` (image upload) |
 | `integrations/llm/` | Chat model factory (Groq), FakeLLM tests ke liye |
+| `integrations/embeddings/` | Embeddings: FakeEmbedder (tests), SentenceTransformerEmbedder (local `BAAI/bge-m3`, koi key nahi), factory |
+| `rag/` | `clean`, `chunk`, `index` (sirf badla hua content dobara embed), `ingest`, `retrieve` (hybrid + threshold), `rag_eval` |
 | `integrations/speech/` | Speech-to-text: FakeSTT, Groq Whisper adapter, factory |
 | `voice/` | Voice gate (confidence, limits, hallucination check), ffmpeg convert, pipeline, scoring (WER/CER) |
 | `catalog/` | Normalizer, search (pg_trgm), price, stock, specs, images, `image_formats` (JPEG rendition), importer |
@@ -36,11 +39,11 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | `agent/` | `router.py` (intent + language), `language_step.py`, `image_flow.py` (image_request ka jawab), `tools.py`, `rules.py`, `router_eval.py` |
 | `api/` | `/healthz`, `/readyz`, WhatsApp webhook, `/dev/*` (sirf local) |
 | `worker.py` | Inbound message uthata hai, jawab outbox mein daalta hai, bhejta hai |
-| `cli.py` | `ask`, `import-catalog`, `eval-router` |
+| `cli.py` | `ask`, `import-catalog`, `eval-router`, `rag-ingest`, `rag-search`, `rag-eval` |
 | `scripts/` | `bakeoff.py` (speech provider ka muqabla), `debug_products.py` |
 | `prompts/`, `config/`, `evals/` | Router aur composer prompts, lexicon aur mappings, golden sets |
 
-Khali (baad ke phases ke liye): `rag/`, `sync/`, `security/`, `handoff/`, `jobs/`,
+Khali (baad ke phases ke liye): `sync/`, `security/`, `handoff/`, `jobs/`,
 `agent/graph.py`, `agent/composer.py`.
 
 ## Windows (cmd) mein chalane ke steps
@@ -111,6 +114,18 @@ Image flow: router `image_request` deta hai, product dhoondta hai (ambiguous ho 
 zyada se zyada 3 pictures outbox mein jaate hain. Sender pehle JPEG link bhejta hai, Meta mana kare to
 download + upload karta hai, phir bhi na jaye to product ka text link bhejta hai aur failure log mein likhta hai.
 Bina image wale product par "picture nahi hai" aur link jata hai. Asli images ka check phone aur naye token ke baad.
+
+## RAG ko local test karna
+`.env` mein `EMBEDDING_PROVIDER=sentence-transformers` aur `EMBEDDING_MODEL=BAAI/bge-m3` rakhein. Model local chalta hai,
+koi key nahi chahiye; pehli baar takreeban 2.2 GB download hota hai. Ollama sirf `eval-router` ke liye hai, embeddings ke liye nahi.
+```
+uv run alembic upgrade head
+uv run python -m app.cli rag-ingest
+uv run python -m app.cli rag-search "refund kitne din mein milta hai?" --en "refund time"
+uv run python -m app.cli rag-eval
+uv run pytest tests\unit\rag
+```
+Kisi document mein jo cheez nahi, uska sawal poochein: bot ko "not confirmed" kehna chahiye (ABSTAIN), andaza nahi lagana.
 
 ## Qaide
 - `.env` kabhi Git ya chat mein na dalein.

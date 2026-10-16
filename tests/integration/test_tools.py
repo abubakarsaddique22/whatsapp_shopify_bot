@@ -153,13 +153,14 @@ async def test_result_carries_tool_name_source_id_and_time(session):
     assert result.fetched_at.tzinfo is not None
 
 
-async def test_registry_lists_the_six_tools():
+async def test_registry_lists_the_seven_tools():
     assert sorted(tools.TOOLS) == [
         "check_stock",
         "get_colors_sizes",
         "get_price",
         "get_product_image",
         "get_specs",
+        "search_policy",
         "search_products",
     ]
 

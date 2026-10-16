@@ -90,6 +90,12 @@ class TranscriptionError(ProviderError):
     code = "transcription_error"
 
 
+class EmbeddingError(ProviderError):
+    """The embedding provider failed (timeout, quota, bad answer). Nothing is stored then."""
+
+    code = "embedding_error"
+
+
 class UnsupportedMedia(AppError):
     """The customer sent a media file we do not accept (wrong type). The bot asks politely."""
 

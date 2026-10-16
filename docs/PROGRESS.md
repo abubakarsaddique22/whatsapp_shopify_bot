@@ -11,7 +11,8 @@
 | 5 | Language detection + response-language control | DONE (code and tests), committed and tagged phase-5-done (2026-10-16). Gate gap recorded, not hidden: router language 92.8% vs 95% target, golden set still needs native review |
 | 6 | Voice messages + speech-to-text | IN PROGRESS: Steps 1 to 5 done, tested with fakes and committed (2026-10-16; full pytest, ruff, mypy pass). Step 6 (bake-off run, provider choice, live voice-note check, tag) is next. Live voice-note check, bake-off clips and the tag wait for the phone, see 'Waiting for the phone' below |
 | 7 | Product images: pick the right picture, JPEG for WhatsApp, send images | IN PROGRESS: Steps 1 to 5 done (2026-10-16; T05, T23, T24 pass with fakes; full pytest, ruff, mypy pass). Docs updated; git commit + tag phase-7-done by hand. Live check on the test number waits for the phone and token |
-| 8 to 14 | RAG, LangGraph, sync, security, evals, AWS, acceptance | NOT STARTED |
+| 8 | RAG: chunking, embeddings (local sentence-transformers, BAAI/bge-m3), pgvector index, hybrid retrieval, `rag-ingest`, `rag-search`, `rag-eval` | IN PROGRESS: Steps 1 to 7 built; `pytest tests\unit\rag`, ruff and mypy pass (2026-10-16). Step 8 (last: docs, baseline, commit + tag phase-8-done) is left |
+| 9 to 14 | LangGraph, sync, security, evals, AWS, acceptance | NOT STARTED |
 
 ## Model rule (decided 2026-10-15, ADR 0002)
 - Eval / judge work (`app.cli eval-router`, `scripts\bakeoff.py --router`, later Phase 12 LLM-as-judge) -> Ollama, through `get_eval_chat_model()` in `integrations/llm/chat_factory.py`.
@@ -92,6 +93,15 @@ Started 2026-10-16. Tests T05, T23, T24. Built with fakes first, so no phone or 
 - [x] Step 5 (done 2026-10-16): `uv run pytest tests\unit\catalog\test_images.py tests\integration\test_image_flow.py` (the blueprint says tests\unit\test_images.py, but the file is in tests\unit\catalog\), full `uv run pytest`, `uv run ruff check .`, `uv run mypy src`: all pass.
 - [ ] Step 6: docs done (PROGRESS.md and the README Phase 7 row, code map and 'Images ko local test karna' section updated 2026-10-16). Still to do by hand: `git commit -m "phase 7: images"` and `git tag phase-7-done`. The live check (real images arrive on the test number) waits for the phone.
 
+## Phase 8: RAG (IN PROGRESS)
+Started 2026-10-16. Blueprint Phase 8 card: ingest, clean, chunk, embed, store, hybrid retrieval with a threshold (abstain when nothing is relevant), `search_policy` tool, golden set in English and Roman Urdu. Steps 1 to 7 are built; Step 8 is the last one.
+- Embedding decision (2026-10-16): embeddings run locally with sentence-transformers. Default in code is `BAAI/bge-m3`, but the model chosen in .env is `paraphrase-multilingual-MiniLM-L12-v2` (smaller, about 470 MB, 384 numbers; reads only 128 tokens per chunk). bge-m3 has not been scored yet. Not Gemini, not Ollama. Gemini and Ollama embedding code was removed (gemini_embedder.py, ollama_embedder.py, test_gemini_embedder.py); Ollama stays for `eval-router` (chat model) only.
+- How it fits: `integrations/embeddings/sentence_transformer_embedder.py` pads the 384 numbers (MiniLM) or 1024 (bge-m3) with zeros to 1536 (the `kb_chunks.embedding` column size), so cosine scores are unchanged and no migration is needed. The model name stored per chunk is `st:<EMBEDDING_MODEL>` (for example `st:paraphrase-multilingual-MiniLM-L12-v2`), so `rag-ingest` re-embeds old chunks once after the switch.
+- .env (chosen): `EMBEDDING_PROVIDER=sentence-transformers`, `EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2`, `RAG_TOP_K=5`, `RAG_MIN_SCORE=0.40` (empty EMBEDDING_MODEL = bge-m3). `EMBEDDING_API_KEY` and `EVAL_EMBEDDING_MODEL` are gone. `rag-eval --embedder` is now `local` (default), `fake` or `configured`.
+- Tests: `uv run pytest tests\unit\rag`, `uv run ruff check .`, `uv run mypy src` pass (2026-10-16). tests/unit/rag/test_sentence_transformer_embedder.py uses a tiny fake model, no download.
+- Chunk size (2026-10-16): `rag/chunk.py` now has MAX_CHUNK_TOKENS=100 and OVERLAP_TOKENS=20 (was 300 and 40), because MiniLM reads only 128 tokens and cuts the rest; a chunk is at most max + overlap = 120. Tests pass. `rag-eval` gave the same numbers before and after (the 4 sample documents are already tiny), so the effect shows only on long real policies. With bge-m3 the numbers can go up again.
+- Still to do (Step 8): DONE 2026-10-16: `rag-eval` baseline is written under 'Baselines measured' and RAG_MIN_SCORE is 0.40. Left: `rag-ingest` from the real store (no --from-dir) and `rag-search` on the real policies; look at priv-ur-01 and priv-ur-09 (query_en wording), optionally score bge-m3 for comparison; manual check from the blueprint (refund, shipping, privacy questions in English and Roman Urdu with `rag-search`, one question that is in no document must abstain); then by hand `git commit -m "phase 8: rag"` and `git tag phase-8-done`.
+
 ## Waiting for the phone (code is written, live check not done yet)
 The user said (2026-10-15): the phone with WhatsApp is not with me now; write the code first, test live when I say so. Do NOT mark these as done before that.
 1. Fresh WhatsApp token in .env (the temporary one lasts about 24 hours); later a System User permanent token.
@@ -101,7 +111,7 @@ The user said (2026-10-15): the phone with WhatsApp is not with me now; write th
 5. Phase 7: ask for pictures by product and by colour on the test number (for example "black wali photo bhejo"), ask "aur pictures hain?" afterwards, try the product that has no image, and check the images really arrive. Also check once that Meta accepts the Shopify `format=jpg` link (if not, the upload path is used).
 
 ## Not started yet
-Phase 8 RAG | 9 LangGraph | 10 sync | 11 security + handoff | 12 evals | 13 AWS | 14 acceptance
+Phase 9 LangGraph | 10 sync | 11 security + handoff | 12 evals | 13 AWS | 14 acceptance
 
 ## Already written (stable code, will not change)
 - core/settings.py, core/logging.py (JSON + redaction + correlation id), core/errors.py,
@@ -115,14 +125,18 @@ Phase 8 RAG | 9 LangGraph | 10 sync | 11 security + handoff | 12 evals | 13 AWS 
 
 ## Decisions (ADR index)
 - 0001 Architecture overview (see Blueprint v2.0)
+- Phase 8 embeddings: local sentence-transformers (BAAI/bge-m3), not Gemini or Ollama (decided 2026-10-16; ADR not written yet)
 
 ## Baselines measured
 | Date | What | Result |
 |------|------|--------|
 | 2026-10-14 | Router eval, gpt-oss:120b-cloud via Ollama, 69 golden cases (all synthetic-starter, NOT a real baseline until native review) | language 92.8% (target 95%), intent 98.6%, colour 100%, max_price 100%, fallbacks 0. By class language/intent: en 100/100, mixed 100/100, pa 100/100, ur 100/100, roman_ur 83.9/96.8. Word-check only: 84.1%. 6 wrong: ru-05, ru-12, ru-22, mx-04, mx-06 (roman_ur called mixed), mx-01 (availability called colors_sizes). Earlier Groq run hit 429 (1 fallback), so it is not used |
 | 2026-10-15 | Debug reply via /dev/simulate, Groq router, same wa_id for 3 messages | 'GA-2100 ki price kya hai' -> roman_ur, price, product=GA-2100, reply_in=roman_ur. 'How much is it?' -> en, price, conversation stays roman_ur (one message does not switch). 'English mein bataein' -> router said mixed/unclear, but the explicit request switched conversation and reply to en. Policy behaved as designed. Sends failed only because the WhatsApp token had expired (HTTP 401, code 190) |
+| 2026-10-16 | `rag-eval`, local sentence-transformers, model paraphrase-multilingual-MiniLM-L12-v2 (384 numbers, padded to 1536), RAG_TOP_K 5, 100 golden questions (80 answerable, 20 not answerable), RAG_MIN_SCORE 0.40 | hit rate 97.5%, MRR 0.899, abstention 14/20 (70%), false abstain 1. en: hit 100%, MRR 0.946, abstain 7/10. roman_ur: hit 95.0%, MRR 0.852, abstain 7/10. By type: faq 100%, policy_shipping 100% (MRR 0.942), policy_refund 100% (MRR 0.804), policy_privacy 90% (MRR 0.850). Best threshold of the sweep = 0.40 (balanced 83.7%); 0.35 gives hit 98.8% but abstain 65%; 0.55 gives abstain 85% but hit 81.2%. 8 wrong at 0.40: priv-ur-01 (right passage not returned), priv-ur-09 (abstained, best score 0.340), and 6 unanswerable questions that were answered (smart watches, installments, watch straps, English and Roman Urdu; scores 0.42 to 0.60). Those 6 cannot be separated by a threshold, the composer must abstain (Phase 9) |
 
 ## Open problems / last error
+- RAG: 6 of 20 unanswerable questions are still answered at RAG_MIN_SCORE 0.40 (smart watches, installments, watch straps; scores 0.42 to 0.60): they sit close to real topics, so a higher threshold would cost too many hits. The composer in Phase 9 must say 'not confirmed' when the passages do not contain the answer.
+- RAG: two Roman Urdu privacy questions fail at 0.40 (priv-ur-01 wrong passages, priv-ur-09 best score 0.340). Their query_en is the same as in the English cases that pass, so check the query_en wording (a full short English question may score higher) before blaming the model.
 - Worker: since Phase 7 the router runs on EVERY customer text (not only with DEBUG_REPLY=true). If LLM_PROVIDER / LLM_API_KEY / ROUTER_MODEL are missing in .env, get_chat_model raises ConfigError and the message ends 'failed' after retries. If Groq is down, the router falls back to 'unclear' and the customer gets the placeholder "Received". Phase 9 replaces the placeholder.
 - Image replies are English templates only (Roman Urdu/Urdu come with the composer in Phase 9).
 - Meta: WhatsApp temporary access token expires after about 24 hours (HTTP 401, meta code 190 on 2026-10-15). Generate a new one in the Meta dashboard (WhatsApp > API Setup), put it in .env as WHATSAPP_ACCESS_TOKEN, restart the worker. Later: create a System User permanent token so this stops.
@@ -144,5 +158,5 @@ Phase 8 RAG | 9 LangGraph | 10 sync | 11 security + handoff | 12 evals | 13 AWS 
 | Dev store with synthetic data | 2 active products, policy pages created; Private mode off |
 | Meta developer account, app, test number | Done: app ws-bot, test number +1 555 650 6823, token and variables in .env. Inbound webhooks arrive and sends go out (manual test 2026-10-14). Earlier 131031 block no longer seen |
 | Meta business verification | Not started |
-| LLM / speech / embedding keys | Groq key available (for the router and eval); put LLM_PROVIDER, LLM_API_KEY, ROUTER_MODEL in .env. Add the Groq key to GitHub secrets for the eval job. Speech and embedding keys not yet |
+| LLM / speech / embedding keys | Groq key available (for the router and eval); put LLM_PROVIDER, LLM_API_KEY, ROUTER_MODEL in .env. Add the Groq key to GitHub secrets for the eval job. Speech key not yet; embeddings run locally (sentence-transformers), no key needed |
 | AWS account and domain | Not yet |

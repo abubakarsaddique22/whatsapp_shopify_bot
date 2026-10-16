@@ -138,9 +138,7 @@ async def test_picture_is_sent_by_jpeg_link(
     assert "format=jpg" in calls[0]["link"]
     sent = await row(session)
     assert (sent.kind, sent.status, sent.wamid, sent.attempts) == ("image", "sent", "wamid.img", 1)
-    transcript = await session.execute(
-        select(Message.body).where(Message.wamid == "wamid.img")
-    )
+    transcript = await session.execute(select(Message.body).where(Message.wamid == "wamid.img"))
     assert transcript.scalar_one() == f"[image] {FALLBACK}"
     assert await sender.send_one(session) is False  # a sent row is never sent again
 

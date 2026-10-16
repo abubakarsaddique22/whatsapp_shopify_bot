@@ -12,6 +12,10 @@ Each tool takes an AsyncSession plus validated arguments and returns a `ToolResu
 * Tools never raise for expected problems: they return `ok=False` with an `error_code`.
 
 Tools: search_products, get_price, check_stock, get_colors_sizes, get_specs, get_product_image.
+
+Phase 8 adds a seventh tool, search_policy: approved passages from the knowledge base (refund,
+shipping, privacy, FAQ, pages). It returns passages with source ids, or an abstention when
+nothing is relevant enough. It reads only kb_documents and kb_chunks, never Shopify.
 """
 
 import re
@@ -36,11 +40,14 @@ from app.catalog.search import (
     variant_size_mm,
 )
 from app.catalog.specs import get_specs
-from app.core.errors import ShopifyError, ValidationFailed
+from app.core.errors import EmbeddingError, ShopifyError, ValidationFailed
 from app.core.settings import get_settings
 from app.db import repositories as repo
 from app.domain.catalog import StockState
 from app.domain.models import ToolResult
+from app.integrations.embeddings.base import Embedder
+from app.integrations.embeddings.factory import get_embedder
+from app.rag.retrieve import DOC_TYPES, retrieve
 
 TOOL_SEARCH = "search_products"
 TOOL_PRICE = "get_price"
@@ -48,8 +55,10 @@ TOOL_STOCK = "check_stock"
 TOOL_OPTIONS = "get_colors_sizes"
 TOOL_SPECS = "get_specs"
 TOOL_IMAGE = "get_product_image"
+TOOL_POLICY = "search_policy"
 
 MAX_QUERY_LEN = 120  # same limit as RouterOutput.product_query
+MAX_KB_QUERY_LEN = 200  # same limit as RouterOutput.kb_query_en
 MAX_AMBIGUOUS_VARIANTS = 10
 MAX_OPTION_VARIANTS = 20
 
@@ -426,6 +435,65 @@ async def tool_get_product_image(
     return await _guard(TOOL_IMAGE, work())
 
 
+# ---- tool 7: search_policy (knowledge base)
+
+
+async def tool_search_policy(
+    session: AsyncSession,
+    query_en: str,
+    doc_type: str | None = None,
+    *,
+    original_query: str | None = None,
+    embedder: Embedder | None = None,
+) -> ToolResult:
+    """Approved passages for a policy or FAQ question, or an abstention.
+
+    `query_en` is the short English search text from the router. The customer's own words
+    (`original_query`) are searched too, and are used alone if `query_en` is empty. `doc_type`
+    (policy_refund, policy_shipping, policy_privacy, faq, page) narrows the search when the intent
+    is clear. Every passage has a `source_id` for BotResponse.source_ids. When `abstain` is true
+    the bot must say the answer is not confirmed and offer a human: it must not guess.
+    """
+
+    async def work() -> ToolResult:
+        text = (query_en or "").strip() or (original_query or "").strip()[:MAX_KB_QUERY_LEN]
+        if not text or len(text) > MAX_KB_QUERY_LEN:
+            raise ValidationFailed("query_en must be 1 to 200 characters")
+        if doc_type is not None and doc_type not in DOC_TYPES:
+            raise ValidationFailed("unknown doc_type")
+        try:
+            found = await retrieve(
+                session,
+                embedder or get_embedder(),
+                query_en=text,
+                original=original_query,
+                doc_type=doc_type,
+            )
+        except EmbeddingError:
+            return _result(TOOL_POLICY, ok=False, error_code="embedding_unavailable")
+        return _result(
+            TOOL_POLICY,
+            data={
+                "abstain": found.abstained,
+                "doc_type": doc_type,
+                "best_score": None if found.best_score is None else round(found.best_score, 4),
+                "passages": [
+                    {
+                        "source_id": p.source_id,
+                        "doc_type": p.doc_type,
+                        "heading": p.heading_path,
+                        "text": p.text,
+                        "url": p.source_url,
+                        "score": round(p.score, 4),
+                    }
+                    for p in found.passages
+                ],
+            },
+        )
+
+    return await _guard(TOOL_POLICY, work())
+
+
 # ---- registry (Phase 9 / the permission gate will use these names)
 
 ToolFn = Callable[..., Awaitable[ToolResult]]
@@ -437,4 +505,5 @@ TOOLS: dict[str, ToolFn] = {
     TOOL_OPTIONS: tool_get_colors_sizes,
     TOOL_SPECS: tool_get_specs,
     TOOL_IMAGE: tool_get_product_image,
+    TOOL_POLICY: tool_search_policy,
 }

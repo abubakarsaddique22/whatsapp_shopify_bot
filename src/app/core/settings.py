@@ -67,10 +67,9 @@ class Settings(BaseSettings):
     # local development only: with STT_PROVIDER=fake every voice note "says" this text
     stt_fake_text: str = ""
 
-    # embeddings / rag
+    # embeddings / rag: fake (tests) or sentence-transformers (local model, no key)
     embedding_provider: str = "fake"
-    embedding_model: str = ""
-    embedding_api_key: SecretStr = SecretStr("")
+    embedding_model: str = ""  # empty = BAAI/bge-m3
     rag_top_k: int = 6
     rag_min_score: float = 0.0
 

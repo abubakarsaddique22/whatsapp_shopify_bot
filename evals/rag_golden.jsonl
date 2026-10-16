@@ -1,0 +1,100 @@
+{"id": "refund-en-01", "lang": "en", "doc_type": "policy_refund", "question": "How many days do I have to return a watch?", "query_en": "days to return a watch", "expect": "within 14 days of delivery"}
+{"id": "refund-en-02", "lang": "en", "doc_type": "policy_refund", "question": "In what condition must the watch be if I want to return it?", "query_en": "condition required to return a watch", "expect": "unused, in its original box"}
+{"id": "refund-en-03", "lang": "en", "doc_type": "policy_refund", "question": "Can I return a watch that has scratches?", "query_en": "return watch with scratches", "expect": "watches with scratches"}
+{"id": "refund-en-04", "lang": "en", "doc_type": "policy_refund", "question": "Can I return an engraved watch?", "query_en": "return engraved watch", "expect": "final sale"}
+{"id": "refund-en-05", "lang": "en", "doc_type": "policy_refund", "question": "How do I start a return?", "query_en": "how to start a return", "expect": "clear photos of the watch"}
+{"id": "refund-en-06", "lang": "en", "doc_type": "policy_refund", "question": "How soon do you reply with return instructions?", "query_en": "time to get return instructions", "expect": "within 1 business day"}
+{"id": "refund-en-07", "lang": "en", "doc_type": "policy_refund", "question": "When will I get my money back after returning the watch?", "query_en": "refund time after return", "expect": "7 business days"}
+{"id": "refund-en-08", "lang": "en", "doc_type": "policy_refund", "question": "I paid cash on delivery. How will I get my refund?", "query_en": "refund method for cash on delivery order", "expect": "refunded by bank transfer"}
+{"id": "refund-en-09", "lang": "en", "doc_type": "policy_refund", "question": "Who pays for the return shipping?", "query_en": "who pays return shipping", "expect": "customer pays return shipping"}
+{"id": "refund-en-10", "lang": "en", "doc_type": "policy_refund", "question": "Can I exchange my watch for a different colour?", "query_en": "exchange watch for another colour", "expect": "another colour or size"}
+{"id": "refund-ur-01", "lang": "roman_ur", "doc_type": "policy_refund", "question": "Watch wapas karne ke liye kitne din milte hain?", "query_en": "days to return a watch", "expect": "within 14 days of delivery"}
+{"id": "refund-ur-02", "lang": "roman_ur", "doc_type": "policy_refund", "question": "Watch wapas karne ke liye wo kis halat mein honi chahiye?", "query_en": "condition required to return a watch", "expect": "unused, in its original box"}
+{"id": "refund-ur-03", "lang": "roman_ur", "doc_type": "policy_refund", "question": "Agar watch par scratch aa gaya ho to kya wapas ho sakti hai?", "query_en": "return watch with scratches", "expect": "watches with scratches"}
+{"id": "refund-ur-04", "lang": "roman_ur", "doc_type": "policy_refund", "question": "Engraving wali watch return ho sakti hai?", "query_en": "return engraved watch", "expect": "final sale"}
+{"id": "refund-ur-05", "lang": "roman_ur", "doc_type": "policy_refund", "question": "Return shuru karne ke liye mujhe kya bhejna hoga?", "query_en": "what to send to start a return", "expect": "order number and clear photos"}
+{"id": "refund-ur-06", "lang": "roman_ur", "doc_type": "policy_refund", "question": "Return ke baad paise kitne din mein wapas milte hain?", "query_en": "refund time after return", "expect": "7 business days"}
+{"id": "refund-ur-07", "lang": "roman_ur", "doc_type": "policy_refund", "question": "COD order ka refund kaise milega?", "query_en": "refund method for cash on delivery order", "expect": "refunded by bank transfer"}
+{"id": "refund-ur-08", "lang": "roman_ur", "doc_type": "policy_refund", "question": "Return ki shipping ka kharcha kaun uthata hai?", "query_en": "who pays return shipping", "expect": "customer pays return shipping"}
+{"id": "refund-ur-09", "lang": "roman_ur", "doc_type": "policy_refund", "question": "Agar watch kharab ya ghalat aayi ho to return shipping kaun deta hai?", "query_en": "return shipping when watch arrived damaged or wrong", "expect": "arrived damaged"}
+{"id": "refund-ur-10", "lang": "roman_ur", "doc_type": "policy_refund", "question": "Kya main watch ka colour badal sakta hoon?", "query_en": "exchange watch for another colour", "expect": "another colour or size"}
+{"id": "ship-en-01", "lang": "en", "doc_type": "policy_shipping", "question": "How long does delivery take in big cities?", "query_en": "delivery time in major cities", "expect": "3 to 5 working days in major cities"}
+{"id": "ship-en-02", "lang": "en", "doc_type": "policy_shipping", "question": "How long does delivery take to smaller towns?", "query_en": "delivery time other areas", "expect": "5 to 7 working days"}
+{"id": "ship-en-03", "lang": "en", "doc_type": "policy_shipping", "question": "Is shipping free?", "query_en": "is shipping free", "expect": "free on orders above rs 5,000"}
+{"id": "ship-en-04", "lang": "en", "doc_type": "policy_shipping", "question": "What is the shipping fee for a small order?", "query_en": "shipping fee for orders below Rs 5000", "expect": "flat rs 250"}
+{"id": "ship-en-05", "lang": "en", "doc_type": "policy_shipping", "question": "How fast do you dispatch an order?", "query_en": "order dispatch time", "expect": "within 24 hours"}
+{"id": "ship-en-06", "lang": "en", "doc_type": "policy_shipping", "question": "I ordered on Sunday. When will it be dispatched?", "query_en": "order placed on Sunday dispatch day", "expect": "dispatched on monday"}
+{"id": "ship-en-07", "lang": "en", "doc_type": "policy_shipping", "question": "How will I get my tracking number?", "query_en": "where to get tracking number", "expect": "tracking number on whatsapp"}
+{"id": "ship-en-08", "lang": "en", "doc_type": "policy_shipping", "question": "Is cash on delivery available, and what is the limit?", "query_en": "cash on delivery limit", "expect": "up to rs 50,000"}
+{"id": "ship-en-09", "lang": "en", "doc_type": "policy_shipping", "question": "What happens if I am not home when the courier comes?", "query_en": "failed delivery attempts", "expect": "tries to deliver twice"}
+{"id": "ship-en-10", "lang": "en", "doc_type": "policy_shipping", "question": "Do you ship to other countries?", "query_en": "international shipping", "expect": "outside pakistan"}
+{"id": "ship-ur-01", "lang": "roman_ur", "doc_type": "policy_shipping", "question": "Bade shehron mein delivery kitne din mein hoti hai?", "query_en": "delivery time in major cities", "expect": "3 to 5 working days in major cities"}
+{"id": "ship-ur-02", "lang": "roman_ur", "doc_type": "policy_shipping", "question": "Chhote shehron ya gaon mein parcel kitne din mein pohanchta hai?", "query_en": "delivery time other areas", "expect": "5 to 7 working days"}
+{"id": "ship-ur-03", "lang": "roman_ur", "doc_type": "policy_shipping", "question": "Kya shipping free hai?", "query_en": "is shipping free", "expect": "free on orders above rs 5,000"}
+{"id": "ship-ur-04", "lang": "roman_ur", "doc_type": "policy_shipping", "question": "5000 se kam ke order par delivery charges kitne hain?", "query_en": "shipping fee for orders below Rs 5000", "expect": "flat rs 250"}
+{"id": "ship-ur-05", "lang": "roman_ur", "doc_type": "policy_shipping", "question": "Order kitni jaldi dispatch hota hai?", "query_en": "order dispatch time", "expect": "within 24 hours"}
+{"id": "ship-ur-06", "lang": "roman_ur", "doc_type": "policy_shipping", "question": "Itwar ko order karun to kab bhejoge?", "query_en": "order placed on Sunday dispatch day", "expect": "dispatched on monday"}
+{"id": "ship-ur-07", "lang": "roman_ur", "doc_type": "policy_shipping", "question": "Tracking number kahan milega?", "query_en": "where to get tracking number", "expect": "tracking number on whatsapp"}
+{"id": "ship-ur-08", "lang": "roman_ur", "doc_type": "policy_shipping", "question": "COD kitne tak ke order par milta hai?", "query_en": "cash on delivery limit", "expect": "up to rs 50,000"}
+{"id": "ship-ur-09", "lang": "roman_ur", "doc_type": "policy_shipping", "question": "Agar courier delivery na kar sake to kya hoga?", "query_en": "failed delivery attempts", "expect": "after two failed attempts"}
+{"id": "ship-ur-10", "lang": "roman_ur", "doc_type": "policy_shipping", "question": "Kya aap Pakistan se bahar bhi bhejte hain?", "query_en": "international shipping", "expect": "outside pakistan"}
+{"id": "priv-en-01", "lang": "en", "doc_type": "policy_privacy", "question": "What personal data do you collect?", "query_en": "what personal data is collected", "expect": "delivery address and order details"}
+{"id": "priv-en-02", "lang": "en", "doc_type": "policy_privacy", "question": "Do you keep my WhatsApp messages?", "query_en": "do you store my whatsapp messages", "expect": "messages you send us on whatsapp"}
+{"id": "priv-en-03", "lang": "en", "doc_type": "policy_privacy", "question": "Why do you collect my data?", "query_en": "why is my data collected", "expect": "prevent fraud"}
+{"id": "priv-en-04", "lang": "en", "doc_type": "policy_privacy", "question": "Do you sell my personal data?", "query_en": "do you sell my personal data", "expect": "never sell your personal data"}
+{"id": "priv-en-05", "lang": "en", "doc_type": "policy_privacy", "question": "Who do you share my address with?", "query_en": "who is my address shared with", "expect": "only with the courier"}
+{"id": "priv-en-06", "lang": "en", "doc_type": "policy_privacy", "question": "Do you store my card number?", "query_en": "do you store card numbers", "expect": "do not store card numbers"}
+{"id": "priv-en-07", "lang": "en", "doc_type": "policy_privacy", "question": "How long do you keep my order records?", "query_en": "how long order records are kept", "expect": "5 years"}
+{"id": "priv-en-08", "lang": "en", "doc_type": "policy_privacy", "question": "When are my WhatsApp chats deleted?", "query_en": "when are whatsapp chats deleted", "expect": "deleted after 12 months"}
+{"id": "priv-en-09", "lang": "en", "doc_type": "policy_privacy", "question": "Can I ask you to delete my personal data?", "query_en": "delete my personal data request", "expect": "show, correct or delete"}
+{"id": "priv-en-10", "lang": "en", "doc_type": "policy_privacy", "question": "Does your website use cookies?", "query_en": "does the website use cookies", "expect": "remember your cart"}
+{"id": "priv-ur-01", "lang": "roman_ur", "doc_type": "policy_privacy", "question": "Aap meri kaun si personal maloomat ikatthi karte hain?", "query_en": "what personal data is collected", "expect": "delivery address and order details"}
+{"id": "priv-ur-02", "lang": "roman_ur", "doc_type": "policy_privacy", "question": "Kya aap meri WhatsApp ki baatein save karte hain?", "query_en": "do you store my whatsapp messages", "expect": "messages you send us on whatsapp"}
+{"id": "priv-ur-03", "lang": "roman_ur", "doc_type": "policy_privacy", "question": "Mera data kis kaam ke liye use hota hai?", "query_en": "why is my data used", "expect": "prevent fraud"}
+{"id": "priv-ur-04", "lang": "roman_ur", "doc_type": "policy_privacy", "question": "Kya aap mera data kisi ko bechte hain?", "query_en": "do you sell my personal data", "expect": "never sell your personal data"}
+{"id": "priv-ur-05", "lang": "roman_ur", "doc_type": "policy_privacy", "question": "Mera address kis ke saath share hota hai?", "query_en": "who is my address shared with", "expect": "only with the courier"}
+{"id": "priv-ur-06", "lang": "roman_ur", "doc_type": "policy_privacy", "question": "Kya aap mere card ka number save karte hain?", "query_en": "do you store card numbers", "expect": "do not store card numbers"}
+{"id": "priv-ur-07", "lang": "roman_ur", "doc_type": "policy_privacy", "question": "Order ka record kitne saal rakhte hain?", "query_en": "how long order records are kept", "expect": "5 years"}
+{"id": "priv-ur-08", "lang": "roman_ur", "doc_type": "policy_privacy", "question": "WhatsApp chat kitne mahine baad delete hoti hai?", "query_en": "when are whatsapp chats deleted", "expect": "deleted after 12 months"}
+{"id": "priv-ur-09", "lang": "roman_ur", "doc_type": "policy_privacy", "question": "Main apna data delete karwana chahta hoon, kya ho sakta hai?", "query_en": "delete my personal data request", "expect": "show, correct or delete"}
+{"id": "priv-ur-10", "lang": "roman_ur", "doc_type": "policy_privacy", "question": "Kya website par cookies istemal hoti hain?", "query_en": "does the website use cookies", "expect": "remember your cart"}
+{"id": "faq-en-01", "lang": "en", "doc_type": "faq", "question": "Are your watches original?", "query_en": "are the watches original and genuine", "expect": "100% original"}
+{"id": "faq-en-02", "lang": "en", "doc_type": "faq", "question": "How long is the warranty?", "query_en": "watch warranty period", "expect": "1 year warranty"}
+{"id": "faq-en-03", "lang": "en", "doc_type": "faq", "question": "How do I claim the warranty?", "query_en": "how to claim warranty", "expect": "short video of the problem"}
+{"id": "faq-en-04", "lang": "en", "doc_type": "faq", "question": "Which payment methods do you accept?", "query_en": "accepted payment methods", "expect": "easypaisa"}
+{"id": "faq-en-05", "lang": "en", "doc_type": "faq", "question": "Can I change my delivery address after placing an order?", "query_en": "change delivery address after order", "expect": "change the delivery address"}
+{"id": "faq-en-06", "lang": "en", "doc_type": "faq", "question": "Can I cancel my order?", "query_en": "cancel an order", "expect": "cancel an order for free"}
+{"id": "faq-en-07", "lang": "en", "doc_type": "faq", "question": "What are your support hours?", "query_en": "customer support hours", "expect": "10 am to 8 pm"}
+{"id": "faq-en-08", "lang": "en", "doc_type": "faq", "question": "How do I measure my wrist size?", "query_en": "how to measure wrist size", "expect": "wrap a paper strip"}
+{"id": "faq-en-09", "lang": "en", "doc_type": "faq", "question": "Do you provide a gift box or a card?", "query_en": "gift box and gift card", "expect": "handwritten card"}
+{"id": "faq-en-10", "lang": "en", "doc_type": "faq", "question": "Do you give a discount on bulk orders?", "query_en": "bulk order discount", "expect": "bulk discount"}
+{"id": "faq-ur-01", "lang": "roman_ur", "doc_type": "faq", "question": "Kya aapki watches asli hoti hain?", "query_en": "are the watches original and genuine", "expect": "100% original"}
+{"id": "faq-ur-02", "lang": "roman_ur", "doc_type": "faq", "question": "Watch ki warranty kitni hai?", "query_en": "watch warranty period", "expect": "1 year warranty"}
+{"id": "faq-ur-03", "lang": "roman_ur", "doc_type": "faq", "question": "Warranty claim kaise karun?", "query_en": "how to claim warranty", "expect": "short video of the problem"}
+{"id": "faq-ur-04", "lang": "roman_ur", "doc_type": "faq", "question": "Payment kin tareeqon se kar sakte hain? Easypaisa ya JazzCash chalta hai?", "query_en": "accepted payment methods", "expect": "easypaisa"}
+{"id": "faq-ur-05", "lang": "roman_ur", "doc_type": "faq", "question": "Order ke baad address badalna ho to kya karun?", "query_en": "change delivery address after order", "expect": "change the delivery address"}
+{"id": "faq-ur-06", "lang": "roman_ur", "doc_type": "faq", "question": "Order cancel kaise hoga?", "query_en": "cancel an order", "expect": "cancel an order for free"}
+{"id": "faq-ur-07", "lang": "roman_ur", "doc_type": "faq", "question": "Support kis waqt tak available hota hai?", "query_en": "customer support hours", "expect": "10 am to 8 pm"}
+{"id": "faq-ur-08", "lang": "roman_ur", "doc_type": "faq", "question": "Meri kalai ka size kaise napun?", "query_en": "how to measure wrist size", "expect": "wrap a paper strip"}
+{"id": "faq-ur-09", "lang": "roman_ur", "doc_type": "faq", "question": "Kya gift ke liye box ya card milta hai?", "query_en": "gift box and gift card", "expect": "handwritten card"}
+{"id": "faq-ur-10", "lang": "roman_ur", "doc_type": "faq", "question": "Zyada watches ek saath lene par discount milta hai?", "query_en": "bulk order discount", "expect": "bulk discount"}
+{"id": "none-en-01", "lang": "en", "doc_type": "none", "question": "Do you sell smart watches?", "query_en": "smart watches for sale"}
+{"id": "none-en-02", "lang": "en", "doc_type": "none", "question": "Do you have a physical shop in Lahore?", "query_en": "physical shop in Lahore"}
+{"id": "none-en-03", "lang": "en", "doc_type": "none", "question": "Can I pay in installments?", "query_en": "installment payment plan"}
+{"id": "none-en-04", "lang": "en", "doc_type": "none", "question": "What is the price of the GA-2100?", "query_en": "price of GA-2100"}
+{"id": "none-en-05", "lang": "en", "doc_type": "none", "question": "Which watch is best for the gym?", "query_en": "best watch for the gym"}
+{"id": "none-en-06", "lang": "en", "doc_type": "none", "question": "Do you sell watch straps separately?", "query_en": "buy watch straps separately"}
+{"id": "none-en-07", "lang": "en", "doc_type": "none", "question": "Do you have a student discount?", "query_en": "student discount"}
+{"id": "none-en-08", "lang": "en", "doc_type": "none", "question": "What is the weather in Karachi today?", "query_en": "weather in Karachi today"}
+{"id": "none-en-09", "lang": "en", "doc_type": "none", "question": "Who is the owner of your company?", "query_en": "owner of the company"}
+{"id": "none-en-10", "lang": "en", "doc_type": "none", "question": "Do you have a loyalty points programme?", "query_en": "loyalty points programme"}
+{"id": "none-ur-01", "lang": "roman_ur", "doc_type": "none", "question": "Kya aap smart watches bechte hain?", "query_en": "smart watches for sale"}
+{"id": "none-ur-02", "lang": "roman_ur", "doc_type": "none", "question": "Lahore mein aapki dukaan kahan hai?", "query_en": "physical shop in Lahore"}
+{"id": "none-ur-03", "lang": "roman_ur", "doc_type": "none", "question": "Kya qiston par watch mil sakti hai?", "query_en": "installment payment plan"}
+{"id": "none-ur-04", "lang": "roman_ur", "doc_type": "none", "question": "GA-2100 ki qeemat kya hai?", "query_en": "price of GA-2100"}
+{"id": "none-ur-05", "lang": "roman_ur", "doc_type": "none", "question": "Gym ke liye kaun si watch behtar hai?", "query_en": "best watch for the gym"}
+{"id": "none-ur-06", "lang": "roman_ur", "doc_type": "none", "question": "Kya alag se strap mil jata hai?", "query_en": "buy watch straps separately"}
+{"id": "none-ur-07", "lang": "roman_ur", "doc_type": "none", "question": "Student discount milta hai?", "query_en": "student discount"}
+{"id": "none-ur-08", "lang": "roman_ur", "doc_type": "none", "question": "Aaj Karachi ka mausam kaisa hai?", "query_en": "weather in Karachi today"}
+{"id": "none-ur-09", "lang": "roman_ur", "doc_type": "none", "question": "Aapki company ka malik kaun hai?", "query_en": "owner of the company"}
+{"id": "none-ur-10", "lang": "roman_ur", "doc_type": "none", "question": "Kya aapke paas loyalty points ka program hai?", "query_en": "loyalty points programme"}
