@@ -16,7 +16,8 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | 4 | WhatsApp text: webhook, inbox/outbox, worker, `/dev/simulate` | Done, tag phase-4-done (sirf real phone se photo check baqi) |
 | 5 | Language detection, router, reply-language policy, debug reply | Done (router language match 92.8%, target 95%) |
 | 6 | Voice: fake STT, Groq Whisper adapter, media download + ffmpeg, voice gate, `/dev/simulate` audio, bake-off script | Steps 1 se 5 done (tests pass). Step 6 (bake-off, live voice-note check) phone aur token ka intezar |
-| 7 se 14 | Images, RAG, LangGraph, sync, security, evals, AWS, acceptance | Shuru nahi hue |
+| 7 | Product images: JPEG conversion (AVIF/WebP), image resolver | Steps 1 se 2 done. Step 3 (WhatsApp image bhejna) agla hai. Live check phone ka intezar |
+| 8 se 14 | RAG, LangGraph, sync, security, evals, AWS, acceptance | Shuru nahi hue |
 
 ## Code ka naqsha (`src/app/`)
 
@@ -30,7 +31,7 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | `integrations/llm/` | Chat model factory (Groq), FakeLLM tests ke liye |
 | `integrations/speech/` | Speech-to-text: FakeSTT, Groq Whisper adapter, factory |
 | `voice/` | Voice gate (confidence, limits, hallucination check), ffmpeg convert, pipeline, scoring (WER/CER) |
-| `catalog/` | Normalizer, search (pg_trgm), price, stock, specs, images, importer |
+| `catalog/` | Normalizer, search (pg_trgm), price, stock, specs, images, `image_formats` (JPEG rendition), importer |
 | `language/` | Roman Urdu lexicon, detection, price parser, language policy (table 6.1) |
 | `agent/` | `router.py` (intent + language), `language_step.py`, `tools.py`, `rules.py`, `router_eval.py` |
 | `api/` | `/healthz`, `/readyz`, WhatsApp webhook, `/dev/*` (sirf local) |

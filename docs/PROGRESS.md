@@ -10,7 +10,8 @@
 | 4 | WhatsApp text (webhook, inbox/outbox, worker, /dev/simulate) | DONE (tag phase-4-done once committed): live text works both ways (2026-10-14), photo reply and duplicate payload checked locally (2026-10-15). One small item open: photo from a real phone, needs a fresh token |
 | 5 | Language detection + response-language control | DONE (code and tests), committed and tagged phase-5-done (2026-10-16). Gate gap recorded, not hidden: router language 92.8% vs 95% target, golden set still needs native review |
 | 6 | Voice messages + speech-to-text | IN PROGRESS: Steps 1 to 5 done, tested with fakes and committed (2026-10-16; full pytest, ruff, mypy pass). Step 6 (bake-off run, provider choice, live voice-note check, tag) is next. Live voice-note check, bake-off clips and the tag wait for the phone, see 'Waiting for the phone' below |
-| 7 to 14 | Images, RAG, LangGraph, sync, security, evals, AWS, acceptance | NOT STARTED |
+| 7 | Product images: pick the right picture, JPEG for WhatsApp, send images | IN PROGRESS: Steps 1 and 2 done (2026-10-16). Step 3 (WhatsApp image sending, outbox migration) next. Live check on the test number waits for the phone and token |
+| 8 to 14 | RAG, LangGraph, sync, security, evals, AWS, acceptance | NOT STARTED |
 
 ## Model rule (decided 2026-10-15, ADR 0002)
 - Eval / judge work (`app.cli eval-router`, `scripts\bakeoff.py --router`, later Phase 12 LLM-as-judge) -> Ollama, through `get_eval_chat_model()` in `integrations/llm/chat_factory.py`.
@@ -18,7 +19,7 @@
 - Before go-live or after a prompt/model change: run the golden set once on Groq (`eval-router --provider groq`) so the production model is checked too.
 
 ## Current phase
-Phase 4 and Phase 5 are finished (Phase 5: all 6 steps; full pytest, ruff and mypy passed on 2026-10-15, DEBUG_REPLY set back to false). Committed and tagged on 2026-10-16 (phase-4-done, phase-5-done); Phase 6 steps 1 to 5 are committed too. Next: Phase 6 Step 6 (needs the phone). Before Phase 6 is live-tested: new WhatsApp token (the temporary one expired, HTTP 401 code 190) and the photo-from-a-real-phone check. Open: router language match is 92.8% vs the 95% target (model calls short Urdu-grammar questions with English nouns 'mixed'), and the 69 golden cases need a native speaker.
+Phase 4 and Phase 5 are finished (Phase 5: all 6 steps; full pytest, ruff and mypy passed on 2026-10-15, DEBUG_REPLY set back to false). Committed and tagged on 2026-10-16 (phase-4-done, phase-5-done); Phase 6 steps 1 to 5 are committed too. Phase 7 (images) was started on 2026-10-16 while waiting for the phone: Steps 1 and 2 are done. Phase 6 Step 6 still needs the phone. Before Phase 6 is live-tested: new WhatsApp token (the temporary one expired, HTTP 401 code 190) and the photo-from-a-real-phone check. Open: router language match is 92.8% vs the 95% target (model calls short Urdu-grammar questions with English nouns 'mixed'), and the 69 golden cases need a native speaker.
 
 ## Phase 0: Client questions (NOT DONE)
 - Do the client questions from the blueprint, section 2.6. Items marked A4 in the language policy table (6.1) also need client confirmation (Urdu-script text and Urdu/Punjabi voice get Roman Urdu replies).
@@ -79,15 +80,25 @@ Started 2026-10-15 while the phone with WhatsApp is not available: all code and 
 - [x] Step 5b (written and checked 2026-10-15: pytest, ruff, mypy pass; the real bake-off RUN belongs to Step 6 and needs clips): voice/scoring.py (WER, CER, script, latency percentiles, summary) + tests/unit/voice/test_scoring.py + scripts/bakeoff.py + evals/voice_manifest.csv (header only: file,class,reference,intent,noisy). Run: `uv run pytest tests\unit\voice\test_scoring.py`, then `uv run python scripts\bakeoff.py --limit 3` once a few clips exist in data\audio. Compare whisper-large-v3 and whisper-large-v3-turbo (default --providers). Reference text must be in the SAME script the provider returns.
 - [ ] Step 6: bake-off report, provider + fallback chosen, thresholds in settings, Punjabi decision, live voice-note check, commit + tag phase-6-done
 
+## Phase 7: Product images and WhatsApp image delivery (IN PROGRESS)
+Started 2026-10-16. Tests T05, T23, T24. Built with fakes first, so no phone or token is needed until the live check. Blueprint Phase 7 card: resolver (variant, then featured, then none), JPEG rendition or Pillow, send by media id or link, up to 3 images, no-image reply with the product link, one refetch on failure then a text link.
+- [x] Step 1: image resolver. Nothing new was written: catalog/images.py (`pick_images`, `get_images`) already existed from Phase 3 Step 6 (variant image, then featured, then none; colour incl. Roman Urdu; max 3, no duplicate files; `NO_IMAGE_MESSAGE` + product link). Tests already exist: tests/unit/catalog/test_images.py and tests/integration/test_specs_images.py (pass).
+- [x] Step 2 (tests, ruff, mypy pass 2026-10-16): catalog/image_formats.py (`jpeg_rendition_url`, `to_jpeg_bytes`, `prepare_image`) + tests/unit/catalog/test_image_formats.py. Checked on the real store: Shopify CDN returns image/jpeg for an AVIF and a WebP picture with `&format=jpg&width=1600` appended (HTTP 200, 2026-10-16). Pillow here reads AVIF and WebP (`features.check` True for both). The dev store has AVIF and WebP pictures, so conversion is needed in practice.
+- [ ] Step 3: WhatsApp client image methods (`send_image`, upload) in integrations/whatsapp/client.py + media_upload.py + payloads.py. The outbox is text-only today (`whatsapp_outbox` has only `body`), so this needs an Alembic migration (message kind + image URL or media id columns), changes in sender.py and the FakeSender.
+- [ ] Step 4: image flow (router `image_request` -> resolver -> send up to 3; ambiguous product gives a clarifying question; no image gives the message + link (T23); send failure: one retry, then text link, logged (T24)). Tests: tests/integration/test_image_flow.py (T05, T23, T24).
+- [ ] Step 5: full pytest, ruff, mypy.
+- [ ] Step 6: update PROGRESS.md and README, `git commit -m "phase 7: images"`, `git tag phase-7-done`. The live check (real images arrive on the test number) waits for the phone.
+
 ## Waiting for the phone (code is written, live check not done yet)
 The user said (2026-10-15): the phone with WhatsApp is not with me now; write the code first, test live when I say so. Do NOT mark these as done before that.
 1. Fresh WhatsApp token in .env (the temporary one lasts about 24 hours); later a System User permanent token.
 2. A real voice note through Meta: real download (token + media url that lives about 5 minutes), real ogg/opus through ffmpeg, check what Meta does with an expired url (media.py refetches once; marked VERIFY), then check the temp folder (wa-audio-*) is empty afterwards. With STT_PROVIDER=fake the reply shows only STT_FAKE_TEXT; a real transcript needs a Step 5 provider and its key in .env.
 3. Bake-off clips (blueprint 6.6): at least 100 per class (Urdu, Punjabi, English with Pakistani accent, Urdu-English mixed), recorded on a phone, some noisy, 3 to 30 seconds, about watches; a native speaker labels them; keep them out of Git (data/audio/); list them in evals/voice_manifest.csv.
 4. Phase 4 leftover: a photo from a real phone gets the polite reply.
+5. Phase 7 (when written): ask for pictures by product and by colour on the test number, try the product that has no image, check the images really arrive.
 
 ## Not started yet
-Phase 7 images | 8 RAG | 9 LangGraph | 10 sync | 11 security + handoff | 12 evals | 13 AWS | 14 acceptance
+Phase 8 RAG | 9 LangGraph | 10 sync | 11 security + handoff | 12 evals | 13 AWS | 14 acceptance
 
 ## Already written (stable code, will not change)
 - core/settings.py, core/logging.py (JSON + redaction + correlation id), core/errors.py,
