@@ -153,9 +153,7 @@ async def test_a_policy_question_can_still_be_answered_by_the_faq(session):
 
 
 async def test_a_question_nothing_answers_abstains(session):
-    found = await retrieve(
-        session, FakeEmbedder(), query_en="qwertyuiop flurb zzzz", min_score=0.3
-    )
+    found = await retrieve(session, FakeEmbedder(), query_en="qwertyuiop flurb zzzz", min_score=0.3)
     assert found.abstained is True
     assert found.passages == []
 

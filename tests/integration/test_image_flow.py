@@ -1,10 +1,15 @@
-"""The image flow end to end (Phase 7, step 4): T05, T23, T24 on the real Postgres.
+"""The image request end to end: T05, T23, T24 on the real Postgres (Phase 7, updated in Phase 9).
 
-A customer text goes through the REAL worker (router, image flow, tools, outbox) and the REAL
-sender code. Only the outside world is fake: the router answers come from a FakeLLM, and the
-WhatsApp calls (send_image, fetch_and_prepare, send_text) are replaced, so no phone, no token and
-no network are needed. Made-up products ('Qorvex', 'Nimbra', 'Zorbex') are inside a transaction
-that is rolled back, so the real mirror and the real outbox rows are never touched.
+A customer text goes through the REAL worker (the LangGraph workflow: router, gate, tools,
+composer, validator, outbox) and the REAL sender code. Only the outside world is fake: the model
+answers come from ONE FakeLLM (the router answer first, then the composer answer when the graph
+needs one), and the WhatsApp calls (send_image, fetch_and_prepare, send_text) are replaced, so no
+phone, no token and no network are needed. Made-up products ('Qorvex', 'Nimbra', 'Zorbex') are
+inside a transaction that is rolled back, so the real mirror and outbox rows are never touched.
+
+Since Phase 9 the pictures still come from the picture tool (never from the model), but the
+clarifying questions are templates in the conversation language and a reply without a picture is
+written by the composer, so those tests compare with render() and a composer answer.
 Needs: docker compose up -d db, and uv run alembic upgrade head.
 """
 
@@ -20,8 +25,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app import worker
-from app.agent import image_flow
-from app.catalog.images import NO_IMAGE_MESSAGE
+from app.agent.templates import render
 from app.catalog.importer import compute_hash, image_rows, product_row, variant_rows
 from app.core.errors import WhatsAppError, WhatsAppTemporaryError
 from app.core.settings import Settings, get_settings
@@ -31,13 +35,21 @@ from app.domain.catalog import Image, Money, Product, StockState, Variant
 from app.integrations.llm.fake_llm import FakeLLM
 from app.integrations.whatsapp import sender
 from app.integrations.whatsapp.payloads import InboundMessage
+from app.language.policy import reply_language
 
 WA_ID = "920000000011"
 REEF_LINK = "https://shop.example/products/qorvex-reef"
+NIMBRA_LINK = "https://shop.example/products/nimbra-bare"
 REEF_BLUE_VARIANT_PICTURE = "https://cdn.example/reef-blue.jpg?v=7"
 REEF_FEATURED = "https://cdn.example/reef-1.jpg?v=1"
 FALLBACK = f"Qorvex Reef: {REEF_LINK}"
 REFUSED = WhatsAppError("HTTP 400", detail={"meta_code": 131053})
+
+# What the composer (FakeLLM) writes. Plain Roman Urdu, no numbers, no colours, no other links.
+PICTURE_TEXT = "Ji, yeh aap ki photo hai."
+NO_PICTURE_TEXT = (
+    f"Maazrat, is watch ki photo mojood nahi hai. Aap yahan dekh sakte hain: {NIMBRA_LINK}"
+)
 
 
 def make_variant(product_no: int, n: int, colour: str, image: str | None = None) -> Variant:
@@ -122,10 +134,20 @@ def router_says(**fields: Any) -> str:
     return json.dumps(data)
 
 
+def composer_says(text: str = PICTURE_TEXT) -> str:
+    """What the composer answers after the tools ran (the graph overrides intent and language)."""
+    return json.dumps(
+        {"detected_language": "roman_ur", "intent": "image_request", "response_text": text}
+    )
+
+
 def use_worker(monkeypatch: pytest.MonkeyPatch, *answers: str) -> FakeLLM:
+    """One FakeLLM for both roles: per message the router answer comes first, then the composer."""
     llm = FakeLLM(list(answers))
     monkeypatch.setattr(
-        worker, "get_settings", lambda: Settings(kill_switch=False, debug_reply=False)
+        worker,
+        "get_settings",
+        lambda: Settings(kill_switch=False, debug_reply=False, urdu_script_replies=False),
     )
     monkeypatch.setattr(worker, "get_chat_model", lambda role="router": llm)
     return llm
@@ -161,6 +183,12 @@ async def outbox(session: AsyncSession) -> list[Any]:
 async def state_of_conversation(session: AsyncSession) -> Any:
     conversation = await repo.get_or_create_conversation(session, WA_ID, "testhash")
     return await repo.load_state(session, conversation)
+
+
+async def template(session: AsyncSession, kind: str, **values: str) -> str:
+    """The template text in the language the conversation ended up with."""
+    state = await state_of_conversation(session)
+    return render(kind, reply_language(state.language, urdu_script_replies=False), **values)
 
 
 def fake_send_image(
@@ -213,7 +241,7 @@ async def test_t05_colour_picture_is_queued_and_sent_through_the_fake_client(
     (queued,) = await outbox(session)
     assert (queued.kind, queued.status) == ("image", "pending")
     assert queued.media_url == REEF_BLUE_VARIANT_PICTURE  # the blue variant's own picture
-    assert queued.caption == "Qorvex Reef"
+    assert queued.caption == "Qorvex Reef (Blue)"
     assert queued.body == FALLBACK  # the text a failed picture falls back to
     state = await state_of_conversation(session)
     assert state.current_product_id == REEF.id
@@ -221,7 +249,11 @@ async def test_t05_colour_picture_is_queued_and_sent_through_the_fake_client(
     calls = fake_send_image(monkeypatch, ["wamid.img"])
     assert await sender.send_one(session) is True
 
-    expected = {"link": REEF_BLUE_VARIANT_PICTURE, "media_id": None, "caption": "Qorvex Reef"}
+    expected = {
+        "link": REEF_BLUE_VARIANT_PICTURE,
+        "media_id": None,
+        "caption": "Qorvex Reef (Blue)",
+    }
     assert calls == [expected]
     (sent,) = await outbox(session)
     assert (sent.kind, sent.status) == ("image", "sent")
@@ -237,7 +269,10 @@ async def test_t05_colour_without_its_own_picture_gets_the_main_one_and_says_so(
     (queued,) = await outbox(session)
     assert queued.kind == "image"
     assert queued.media_url == REEF_FEATURED
-    assert "do not have a black picture" in queued.caption  # no false claim about the colour
+    missing = await template(
+        session, "picture_colour_missing", title="Qorvex Reef", colour="black"
+    )
+    assert queued.caption == missing  # no false claim about the colour, in the reply language
 
 
 async def test_more_pictures_queues_up_to_three_without_repeats(
@@ -275,18 +310,20 @@ async def test_a_follow_up_without_a_product_name_uses_the_current_product(
 # ---- T23: no picture
 
 
-async def test_t23_product_without_a_picture_gets_the_message_and_the_link(
+async def test_t23_product_without_a_picture_gets_a_reply_with_the_link(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    use_worker(monkeypatch, router_says(product_query="Nimbra Bare"))
+    use_worker(
+        monkeypatch, router_says(product_query="Nimbra Bare"), composer_says(NO_PICTURE_TEXT)
+    )
 
     await say(session, "Nimbra Bare ki photo bhejo")
 
     (queued,) = await outbox(session)
     assert queued.kind == "text"  # nothing to send as a picture
     assert queued.media_url is None
-    assert queued.body.startswith(NO_IMAGE_MESSAGE)
-    assert "https://shop.example/products/nimbra-bare" in queued.body
+    assert queued.body == NO_PICTURE_TEXT  # the composer text passed the validator
+    assert NIMBRA_LINK in queued.body  # and the customer gets the product link
 
     bodies = fake_send_text(monkeypatch)
     await sender.send_one(session)
@@ -305,14 +342,16 @@ async def test_ambiguous_product_gets_one_clarifying_question_and_no_picture(
 
     (queued,) = await outbox(session)
     assert queued.kind == "text"
-    assert queued.body.startswith("Which one do you mean: Zorbex Tide")
+    prefix = (await template(session, "ask_which_product", names="")).split(":")[0]
+    assert queued.body.startswith(prefix)
+    assert "Zorbex Tide" in queued.body
     assert "Zorbex Tide Ultra" in queued.body
     state = await state_of_conversation(session)
     assert state.clarification_count == 1
     assert state.current_product_id is None  # nothing was guessed
 
 
-async def test_after_two_questions_in_a_row_the_bot_asks_for_the_exact_model(
+async def test_after_two_questions_in_a_row_a_person_takes_over(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     use_worker(monkeypatch, *[router_says(product_query="zorbex tide")] * 3)
@@ -321,10 +360,13 @@ async def test_after_two_questions_in_a_row_the_bot_asks_for_the_exact_model(
         await say(session, "zorbex tide ki photo")
 
     bodies = [r.body for r in await outbox(session)]
-    assert bodies[0].startswith("Which one do you mean")
-    assert bodies[1].startswith("Which one do you mean")
-    assert bodies[2] == image_flow.ASK_EXACT
-    assert (await state_of_conversation(session)).clarification_count == 2
+    prefix = (await template(session, "ask_which_product", names="")).split(":")[0]
+    assert bodies[0].startswith(prefix)
+    assert bodies[1].startswith(prefix)
+    assert bodies[2] == await template(session, "handoff_created")  # not a third question
+    state = await state_of_conversation(session)
+    assert state.clarification_count == 2
+    assert state.needs_handoff is True
 
 
 async def test_no_product_named_and_none_current_asks_which_one(
@@ -334,7 +376,7 @@ async def test_no_product_named_and_none_current_asks_which_one(
 
     await say(session, "photo bhejo")
 
-    assert [r.body for r in await outbox(session)] == [image_flow.ASK_WHICH]
+    assert [r.body for r in await outbox(session)] == [await template(session, "ask_product_name")]
 
 
 async def test_unknown_product_is_not_found(
@@ -344,7 +386,7 @@ async def test_unknown_product_is_not_found(
 
     await say(session, "Xylophon Quark ki photo")
 
-    assert [r.body for r in await outbox(session)] == [image_flow.NOT_FOUND]
+    assert [r.body for r in await outbox(session)] == [await template(session, "not_found")]
 
 
 # ---- T24: the picture cannot be delivered

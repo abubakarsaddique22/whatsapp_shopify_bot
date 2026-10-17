@@ -17,8 +17,9 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | 5 | Language detection, router, reply-language policy, debug reply | Done (router language match 92.8%, target 95%) |
 | 6 | Voice: fake STT, Groq Whisper adapter, media download + ffmpeg, voice gate, `/dev/simulate` audio, bake-off script | Steps 1 se 5 done (tests pass). Step 6 (bake-off, live voice-note check) phone aur token ka intezar |
 | 7 | Product images: image resolver, JPEG conversion (AVIF/WebP), WhatsApp image bhejna (link ya upload), image flow (`image_request`), text-link fallback | Steps 1 se 5 done (T05, T23, T24 pass, fakes ke saath). Asli phone par images ka live check phone aur token ka intezar |
-| 8 | RAG: policies/FAQ ko chunk karna, local embeddings (sentence-transformers, `BAAI/bge-m3`), pgvector index, hybrid retrieval, `rag-ingest` / `rag-search` / `rag-eval` | Steps 1 se 7 bane (tests pass). Step 8 (baseline, commit + tag) baqi |
-| 9 se 14 | LangGraph, sync, security, evals, AWS, acceptance | Shuru nahi hue |
+| 8 | RAG: policies/FAQ ko chunk karna, local embeddings (sentence-transformers, `BAAI/bge-m3`), pgvector index, hybrid retrieval, `rag-ingest` / `rag-search` / `rag-eval` | Done, tag phase-8-done (baseline 2026-10-16: hit rate 97.5%, abstention 14/20). Real store par `rag-ingest` / `rag-search` ka manual check baqi |
+| 9 | LangGraph workflow: state, permission gate, tools, clarify/refuse/handoff templates, composer, validator, graph + Postgres checkpointer, worker, `app.cli chat` | Done, tag phase-9-done (full pytest/ruff/mypy pass, asli model se 12 messages ka check 2026-10-17). Phone par 10-turn check aur LangSmith traces phone ka intezar |
+| 10 se 14 | sync, security, evals, AWS, acceptance | Shuru nahi hue |
 
 ## Code ka naqsha (`src/app/`)
 
@@ -36,15 +37,14 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | `voice/` | Voice gate (confidence, limits, hallucination check), ffmpeg convert, pipeline, scoring (WER/CER) |
 | `catalog/` | Normalizer, search (pg_trgm), price, stock, specs, images, `image_formats` (JPEG rendition), importer |
 | `language/` | Roman Urdu lexicon, detection, price parser, language policy (table 6.1) |
-| `agent/` | `router.py` (intent + language), `language_step.py`, `image_flow.py` (image_request ka jawab), `tools.py`, `rules.py`, `router_eval.py` |
+| `agent/` | `router.py` (intent + language), `state.py`, `gate.py` (permission gate), `nodes.py`, `composer.py`, `validator.py`, `templates.py`, `graph.py` (LangGraph + checkpointer), `tools.py`, `rules.py`, `router_eval.py`; `language_step.py` aur `image_flow.py` ab sirf `DEBUG_REPLY=true` ke liye |
 | `api/` | `/healthz`, `/readyz`, WhatsApp webhook, `/dev/*` (sirf local) |
-| `worker.py` | Inbound message uthata hai, jawab outbox mein daalta hai, bhejta hai |
-| `cli.py` | `ask`, `import-catalog`, `eval-router`, `rag-ingest`, `rag-search`, `rag-eval` |
+| `worker.py` | Inbound message uthata hai, graph se jawab banata hai, outbox mein daalta hai, bhejta hai |
+| `cli.py` | `ask`, `chat`, `import-catalog`, `eval-router`, `rag-ingest`, `rag-search`, `rag-eval` |
 | `scripts/` | `bakeoff.py` (speech provider ka muqabla), `debug_products.py` |
 | `prompts/`, `config/`, `evals/` | Router aur composer prompts, lexicon aur mappings, golden sets |
 
-Khali (baad ke phases ke liye): `sync/`, `security/`, `handoff/`, `jobs/`,
-`agent/graph.py`, `agent/composer.py`.
+Khali (baad ke phases ke liye): `sync/`, `security/`, `handoff/` (abhi stub), `jobs/`.
 
 ## Windows (cmd) mein chalane ke steps
 ```
@@ -126,6 +126,15 @@ uv run python -m app.cli rag-eval
 uv run pytest tests\unit\rag
 ```
 Kisi document mein jo cheez nahi, uska sawal poochein: bot ko "not confirmed" kehna chahiye (ABSTAIN), andaza nahi lagana.
+
+## Poora bot terminal mein chalana (Phase 9, phone ke baghair)
+`.env` mein `LLM_PROVIDER`, `LLM_API_KEY`, `ROUTER_MODEL` aur `COMPOSER_MODEL` zaroori hain (`TURN_BUDGET_SECONDS` default 45).
+```
+uv run python -m app.cli chat --debug
+```
+Ye asli model, database aur dev store se chalta hai, WhatsApp par kuch nahi jata. `/reset` conversation saaf karta hai, `/quit` band.
+Pictures milne par composer aur validator ko chhod kar seedha template caption jata hai (colour na mile to caption wahi batata hai).
+Tests: `uv run pytest tests\unit\agent tests\integration\test_graph_flow.py tests\integration\test_graph_checkpointer.py tests\integration\test_image_flow.py`
 
 ## Qaide
 - `.env` kabhi Git ya chat mein na dalein.

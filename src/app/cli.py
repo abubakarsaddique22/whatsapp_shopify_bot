@@ -4,6 +4,9 @@ uv run python -m app.cli shopify-ping
 uv run python -m app.cli import-catalog
 uv run python -m app.cli ask "GA-2100 ka price?"
 uv run python -m app.cli ask "is it water resistant" --debug
+uv run python -m app.cli chat
+uv run python -m app.cli chat --debug
+uv run python -m app.cli chat --no-checkpoint
 uv run python -m app.cli eval-router
 uv run python -m app.cli eval-router --limit 10
 uv run python -m app.cli eval-router --provider groq
@@ -21,20 +24,34 @@ import asyncio
 import io
 import json
 import sys
+import uuid
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent import rules
+from app.agent.graph import (
+    build_graph,
+    open_checkpointer,
+    run_turn,
+    to_replies,
+    use_selector_event_loop,
+)
+from app.agent.nodes import Deps
 from app.agent.router_eval import format_report, load_golden, run_eval, summarize
+from app.agent.state import GraphState
 from app.catalog.importer import sync_mirror
 from app.core.errors import AppError, ConfigError
 from app.core.settings import get_settings
+from app.core.tracing import configure_tracing
+from app.db import repositories as repo
 from app.db.session import get_engine, get_sessionmaker
 from app.db.tables import KbDocument
+from app.domain.models import ConversationState
 from app.integrations.embeddings.base import Embedder
-from app.integrations.embeddings.factory import get_embedder, get_eval_embedder
+from app.integrations.embeddings.factory import get_embedder, get_eval_embedder, warm_up
 from app.integrations.llm.chat_factory import get_chat_model, get_eval_chat_model
 from app.integrations.llm.fake_llm import FakeLLM
 from app.integrations.shopify import gateway
@@ -244,14 +261,132 @@ async def rag_eval(
     print(scoring.format_report(results, level))
 
 
+CHAT_WA_ID = "local-cli-chat"  # the one fake customer of `chat` (a row in conversations)
+CHAT_HASH = "cli-chat"
+CHAT_HELP = "Type a customer message.  /reset = new conversation   /quit = leave"
+
+
+def _chat_debug(state: GraphState) -> str:
+    """What the graph did in one turn: router result, tools, validator problems."""
+    router = state.get("router")
+    tools = [result.tool for result in state.get("tool_results", [])]
+    lines = [
+        f"  intent={router.intent.value if router else None}"
+        f" language={router.language.value if router else None}"
+        f" reply_in={state.get('reply_language')} branch={state.get('branch')}",
+        f"  tools={tools} errors={state.get('tool_errors')}",
+        f"  compose_attempts={state.get('compose_attempts')}"
+        f" validation_errors={state.get('validation_errors')}"
+        f" used_fallback={state.get('used_fallback')}",
+    ]
+    if state.get("handoff_reason"):
+        lines.append(f"  handoff_reason={state.get('handoff_reason')}")
+    for result in state.get("tool_results", []):  # what the product search really found
+        if result.tool == "search_products" and isinstance(result.data, dict):
+            found = [c.get("title") for c in result.data.get("candidates", [])]
+            lines.append(f"  search: kind={result.data.get('kind')} found={found}")
+    if state.get("security_event"):
+        lines.append(f"  security_event={state.get('security_event')}")
+    return "\n".join(lines)
+
+
+async def chat(*, debug: bool = False, checkpoints: bool = True) -> None:
+    """Talk to the WHOLE bot in the terminal: router, gate, tools, composer, validator.
+
+    Uses the real model (LLM_* in .env), the real Postgres and the real Shopify dev store, but no
+    WhatsApp: nothing is sent. The fake customer keeps its conversation between turns, so
+    'aur colours?' after a product question works. --debug shows what the graph did.
+    """
+    _utf8_console()
+    llm = get_chat_model("router")
+    composer_llm = get_chat_model("composer")
+    if isinstance(llm, FakeLLM):
+        raise ConfigError("chat needs a real model: set LLM_PROVIDER=groq in .env")
+    settings = get_settings()
+    configure_tracing(settings)  # .env -> os.environ, or LangSmith stays off
+    sessionmaker = get_sessionmaker()
+    try:
+        async with AsyncExitStack() as stack:
+            saver = await stack.enter_async_context(open_checkpointer()) if checkpoints else None
+            print("(loading the embedding model, the first start takes a while...)")
+            try:  # so the first policy question does not use up the time budget of its turn
+                await warm_up()
+            except Exception as exc:
+                print(f"(embedding model not loaded: {type(exc).__name__})")
+            print(CHAT_HELP)
+            while True:
+                try:
+                    line = (await asyncio.to_thread(input, "you> ")).strip()
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if not line:
+                    continue
+                if line == "/quit":
+                    break
+                try:
+                    async with sessionmaker() as session, session.begin():  # commit per turn
+                        conversation_id = await repo.get_or_create_conversation(
+                            session, CHAT_WA_ID, CHAT_HASH
+                        )
+                        if line == "/reset":
+                            fresh = ConversationState.model_validate(
+                                {"conversation_id": str(conversation_id), "sender_hash": CHAT_HASH}
+                            )
+                            await repo.save_state(session, conversation_id, fresh)
+                            print("bot> (new conversation)")
+                            continue
+                        conversation = await repo.load_state(session, conversation_id)
+                        deps = Deps(
+                            session=session,
+                            llm=llm,
+                            composer_llm=composer_llm,
+                            urdu_script_replies=settings.urdu_script_replies,
+                        )
+                        state = await run_turn(
+                            build_graph(deps, saver),
+                            conversation_id,
+                            line,
+                            conversation,
+                            correlation_id=uuid.uuid4().hex,
+                        )
+                        replies = to_replies(state)
+                except AppError as exc:
+                    print(f"bot> ERROR ({exc.code}): {exc.message}")
+                    continue
+                for reply in replies:
+                    if reply.kind == "image":
+                        print(f"bot> [picture] {reply.media_url}  ({reply.caption})")
+                    else:
+                        print(f"bot> {reply.body}")
+                if debug:
+                    print(_chat_debug(state))
+    finally:
+        await get_engine().dispose()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="app.cli")
     parser.add_argument(
         "command",
-        choices=[*sorted(COMMANDS), "ask", "eval-router", "rag-ingest", "rag-search", "rag-eval"],
+        choices=[
+            *sorted(COMMANDS),
+            "ask",
+            "chat",
+            "eval-router",
+            "rag-ingest",
+            "rag-search",
+            "rag-eval",
+        ],
     )
     parser.add_argument("question", nargs="*", help="for 'ask': the customer's sentence")
-    parser.add_argument("--debug", action="store_true", help="for 'ask': print the tool results")
+    parser.add_argument(
+        "--debug", action="store_true", help="for 'ask': print the tool results; 'chat': the graph"
+    )
+    parser.add_argument(
+        "--no-checkpoint",
+        action="store_true",
+        help="for 'chat': do not use the LangGraph Postgres checkpointer",
+    )
     parser.add_argument("--limit", type=int, help="for 'eval-router': only the first N cases")
     parser.add_argument(
         "--provider",
@@ -282,6 +417,9 @@ def main() -> None:
     try:
         if args.command == "ask":
             asyncio.run(ask(question, debug=args.debug))
+        elif args.command == "chat":
+            use_selector_event_loop()  # Windows: the checkpointer (psycopg) needs this loop
+            asyncio.run(chat(debug=args.debug, checkpoints=not args.no_checkpoint))
         elif args.command == "eval-router":
             asyncio.run(eval_router(args.limit, args.provider))
         elif args.command == "rag-ingest":

@@ -1,0 +1,33 @@
+# Clarifying questions. No model call. Placeholder: {names}
+ask_which_product:
+  en: "Which one do you mean: {names}?"
+  roman_ur: "Aap ka matlab kaun sa hai: {names}?"
+  en_roman_ur: "Which one do you mean: {names}? / Aap ka matlab kaun sa hai?"
+ask_product_name:
+  en: "Which watch do you mean? Please tell me its name or model."
+  roman_ur: "Aap kaun si watch ke baare mein pooch rahe hain? Meherbani karke naam ya model bata dein."
+  en_roman_ur: "Which watch do you mean? / Kaun si watch? Naam ya model bata dein."
+not_found:
+  en: "I could not find that product. Could you check the name or model?"
+  roman_ur: "Mujhe yeh product nahi mila. Meherbani karke naam ya model dobara check kar lein."
+  en_roman_ur: "I could not find that product. / Yeh product nahi mila, naam ya model check karein."
+ask_detail:
+  en: "Sorry, I did not understand. Could you tell me a bit more about what you need?"
+  roman_ur: "Maazrat, main samajh nahi saka. Aap thori tafseel se bata dein ke aap ko kya chahiye?"
+  en_roman_ur: "Sorry, I did not understand. / Maazrat, samajh nahi aaya. Thori tafseel se bata dein."
+ask_which_variant:  # ONE product with several colours / options: list them. Placeholders: {title} {options}
+  en: "{title} comes in: {options}. Which one do you mean?"
+  roman_ur: "{title} in options mein milti hai: {options}. Aap ko kaun si chahiye?"
+  en_roman_ur: "{title} comes in: {options}. / Kaun si chahiye?"
+voice_unclear:
+  en: "Sorry, I could not hear that clearly. Could you please send it again or type your question?"
+  roman_ur: "Maazrat, awaz saaf sunai nahi di. Meherbani karke dobara bhej dein ya likh kar bata dein."
+  en_roman_ur: "Sorry, I could not hear that clearly. / Maazrat, awaz saaf nahi thi, dobara bhej dein ya likh dein."
+pictures_sent:  # history text only: the customer gets the pictures and their captions
+  en: "Here you go: {title}."
+  roman_ur: "Ye lein: {title}."
+  en_roman_ur: "Here you go: {title}. / Ye lein."
+picture_colour_missing:  # caption: the colour asked for has no picture of its own
+  en: "{title} (I do not have a {colour} picture, this is the main picture)"
+  roman_ur: "{title} ({colour} colour ki apni picture nahi hai, ye main picture hai)"
+  en_roman_ur: "{title} (no {colour} picture, this is the main picture / {colour} ki picture nahi, ye main hai)"

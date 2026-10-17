@@ -19,6 +19,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app import worker
+from app.agent.templates import render
 from app.core.errors import MediaTooLarge, TranscriptionError, UnsupportedMedia
 from app.core.settings import Settings, get_settings
 from app.db import repositories as repo
@@ -233,7 +234,9 @@ async def test_without_the_debug_switch_a_voice_note_gets_the_same_reply_as_text
     await queue_voice(session)
     await process(session)
 
-    assert await reply_bodies(session) == ["Received"]
+    # the empty FakeLLM router answers 'unclear': the graph asks, exactly as for typed text.
+    # The transcript is English, so the question is in English (not the en_roman_ur mix).
+    assert await reply_bodies(session) == [render("ask_detail", "en")]
 
 
 # ---- T22: a doubtful transcript is never answered

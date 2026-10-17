@@ -52,6 +52,16 @@ def get_embedder(settings: Settings | None = None) -> Embedder:
     )
 
 
+async def warm_up(embedder: Embedder | None = None) -> None:
+    """Load the model NOW, not inside the first customer message.
+
+    The first load imports torch and reads the model: it can take longer than the whole time
+    budget of a turn (TURN_BUDGET_SECONDS), so the first policy question ended in the safe reply
+    plus a handoff (seen in the real-model check, 2026-10-17). Call it once at start-up.
+    """
+    await (embedder or get_embedder()).embed(["warm up"])
+
+
 def get_eval_embedder(settings: Settings | None = None) -> Embedder:
     """The embedder `rag-eval` uses: the local sentence-transformers model (default bge-m3)."""
     return _local(settings or get_settings())

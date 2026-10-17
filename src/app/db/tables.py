@@ -2,6 +2,7 @@
 
 Phase 3: catalog mirror | Phase 4: whatsapp_inbox, whatsapp_outbox, conversations, messages
 Phase 8: kb_documents, kb_chunks | Phase 10: sync_events, sync_runs | Phase 11: handoffs
+(the Phase 10 tables are at the end of this file)
 """
 
 from datetime import datetime
@@ -258,3 +259,58 @@ class KbChunk(Base):
         UniqueConstraint("doc_id", "ordinal", name="uq_kb_chunks_doc_ordinal"),
         Index("ix_kb_chunks_tsv", "tsv", postgresql_using="gin"),
     )
+
+
+# ---- Phase 10: Shopify sync (Blueprint 4.7)
+# Webhooks only SAY that something changed; handlers refetch the object by id, so the data in the
+# payload is never trusted and an old event cannot overwrite newer data.
+
+
+class SyncEvent(Base):
+    """One row per Shopify webhook delivery. The unique webhook_id makes redelivery harmless."""
+
+    __tablename__ = "sync_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    webhook_id: Mapped[str] = mapped_column(String(100))  # X-Shopify-Webhook-Id (VERIFY name)
+    topic: Mapped[str] = mapped_column(String(64))  # products/update, inventory_levels/update ...
+    shop_domain: Mapped[str] = mapped_column(String(200))
+    resource_id: Mapped[str | None] = mapped_column(String)  # Shopify global id of the object
+    triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=sa_text("'{}'::jsonb")
+    )
+    status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    error: Mapped[str | None] = mapped_column(Text)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("webhook_id", name="uq_sync_events_webhook_id"),
+        Index("ix_sync_events_status_received", "status", "received_at"),
+        Index("ix_sync_events_resource_id", "resource_id"),
+    )
+    # status values: pending | processing | done | failed (dead letter) | ignored
+
+
+class SyncRun(Base):
+    """One row per reconciliation run: delta (minutes), full (nightly), policy (hourly)."""
+
+    __tablename__ = "sync_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(16))  # delta | full | policy
+    status: Mapped[str] = mapped_column(String(16), default="running", server_default="running")
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # the next delta run asks Shopify for products updated after the watermark of the last ok run
+    watermark: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    counts: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"))
+    error: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (Index("ix_sync_runs_kind_started", "kind", "started_at"),)
+    # status values: running | ok | failed

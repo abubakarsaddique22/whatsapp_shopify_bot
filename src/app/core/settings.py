@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     composer_model: str = ""
     llm_api_key: SecretStr = SecretStr("")
     llm_timeout_seconds: int = 20
+    # time budget of ONE customer message in the graph (Blueprint 3.7 limits): when it is used up,
+    # no new composer call starts and the customer gets the safe templated reply plus a handoff.
+    # A model call that is already running is still bounded by LLM_TIMEOUT_SECONDS.
+    turn_budget_seconds: int = 45
 
     # eval only (Ollama, OpenAI-compatible): used by `eval-router`; the app keeps LLM_PROVIDER
     ollama_base_url: str = "http://localhost:11434/v1"  # cloud: https://ollama.com/v1

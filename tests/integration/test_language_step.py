@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app import worker
 from app.agent.language_step import run_language_step
+from app.agent.templates import render
 from app.core.settings import Settings, get_settings
 from app.db import repositories as repo
 from app.db.tables import WhatsAppInbox, WhatsAppOutbox
@@ -166,7 +167,7 @@ async def test_worker_sends_the_debug_reply_when_switched_on(
     assert bodies[0].startswith("[debug] language=en | intent=greeting")
 
 
-async def test_worker_without_the_switch_still_says_received(
+async def test_worker_without_the_switch_uses_the_graph(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
@@ -183,4 +184,5 @@ async def test_worker_without_the_switch_still_says_received(
     await worker.handle_inbox(session, inbox)
 
     bodies = (await session.execute(select(WhatsAppOutbox.body))).scalars().all()
-    assert list(bodies) == ["Received"]
+    # the empty FakeLLM router answers 'unclear': the graph asks a clarifying question
+    assert list(bodies) == [render("ask_detail", "en_roman_ur")]

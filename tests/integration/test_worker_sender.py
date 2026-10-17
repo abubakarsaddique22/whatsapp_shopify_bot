@@ -15,6 +15,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app import worker
+from app.agent.templates import render
 from app.core.errors import WhatsAppError, WhatsAppTemporaryError
 from app.core.settings import Settings, get_settings
 from app.db import repositories as repo
@@ -112,11 +113,12 @@ def fake_send(monkeypatch: pytest.MonkeyPatch, result: str | Exception) -> None:
 # ---- worker
 
 
-async def test_text_message_gets_received_reply(session: AsyncSession) -> None:
+async def test_text_message_goes_through_the_graph(session: AsyncSession) -> None:
+    """The router (empty FakeLLM) answers 'unclear', so the graph asks a clarifying question."""
     inbox_id = await queue_inbound(session, "text", "hello")
     await process(session)
 
-    assert [r.body for r in await outbox_rows(session)] == ["Received"]
+    assert [r.body for r in await outbox_rows(session)] == [render("ask_detail", "en_roman_ur")]
     assert await inbox_status(session, inbox_id) == "done"
     result = await session.execute(
         select(Message.direction, Message.body).where(

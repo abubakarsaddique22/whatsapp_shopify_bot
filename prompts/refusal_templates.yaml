@@ -1,0 +1,29 @@
+# Refusals, handoff and safe fallback. No model call. Never explains WHY a filter fired.
+private_data:        # T19: refuse, no data tool, OFFER a person
+  en: "I cannot share or check order or personal details here. Our team can help you with that. Would you like me to pass your request to them?"
+  roman_ur: "Main yahan order ya zaati maloomat share ya check nahi kar sakta. Hamari team is mein madad kar sakti hai. Kya main aap ki request unhein bhej doon?"
+  en_roman_ur: "I cannot share order or personal details. / Order ki maloomat team dein gi, kya main request bhej doon?"
+abuse_or_injection:  # T20: short, polite, no detail
+  en: "Sorry, I cannot help with that. I am happy to help with our watches, prices, delivery or returns."
+  roman_ur: "Maazrat, main is mein madad nahi kar sakta. Watches, price, delivery ya return ke baare mein zaroor poochein."
+  en_roman_ur: "Sorry, I cannot help with that. / Maazrat, watches, price ya delivery ke baare mein poochein."
+out_of_scope:
+  en: "Sorry, I can only help with our watches, prices, delivery and returns."
+  roman_ur: "Maazrat, main sirf watches, price, delivery aur return ke baare mein madad kar sakta hoon."
+  en_roman_ur: "Sorry, I can only help with our watches. / Main sirf watches ke baare mein madad kar sakta hoon."
+handoff_created:
+  en: "I have passed your request to our team. They will contact you here soon."
+  roman_ur: "Maine aap ki request hamari team ko bhej di hai. Woh jald aap se yahin rabta karein ge."
+  en_roman_ur: "I have passed your request to our team. / Request team ko bhej di hai, woh jald rabta karein ge."
+paused_ack:          # during bot_paused_until: ONE short acknowledgement, then silence
+  en: "Our team has your request and will reply soon."
+  roman_ur: "Hamari team ke paas aap ki request hai, woh jald jawab dein ge."
+  en_roman_ur: "Our team has your request. / Team ke paas request hai, jald jawab milega."
+safe_fallback:       # validator rejects twice, or composer fails (8.7, 8.8)
+  en: "Sorry, I cannot confirm that right now. I have asked our team to help you."
+  roman_ur: "Maazrat, main abhi is ki tasdeeq nahi kar sakta. Maine hamari team ko madad ke liye bata diya hai."
+  en_roman_ur: "Sorry, I cannot confirm that right now. / Abhi tasdeeq nahi ho sakti, team ko bata diya hai."
+shopify_unavailable: # T15
+  en: "I cannot check that right now. Please try again in a moment, or I can ask our team to help."
+  roman_ur: "Main abhi yeh check nahi kar sakta. Thori dair baad try karein, ya main team se madad ke liye keh sakta hoon."
+  en_roman_ur: "I cannot check that right now. / Abhi check nahi ho sakta, thori dair baad try karein."
