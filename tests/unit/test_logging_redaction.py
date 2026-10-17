@@ -15,6 +15,24 @@ def test_normal_text_untouched():
     assert redact("price is Rs 12,500") == "price is Rs 12,500"
 
 
+def test_a_shopify_id_is_kept_so_logs_can_be_debugged():
+    gid = "gid://shopify/Product/9876543210123"
+    assert redact(f"variants truncated for {gid}") == f"variants truncated for {gid}"
+    assert redact("item gid://shopify/InventoryItem/12345678901234") == (
+        "item gid://shopify/InventoryItem/12345678901234"
+    )
+
+
+def test_a_phone_number_next_to_a_shopify_id_is_still_redacted():
+    text = redact("gid://shopify/Product/9876543210123 asked by 923001234567")
+    assert "gid://shopify/Product/9876543210123" in text
+    assert "923001234567" not in text
+
+
+def test_a_nul_character_in_the_input_cannot_fake_a_placeholder():
+    assert redact("x \x000\x00 y") == "x 0 y"
+
+
 def test_json_line_has_correlation_id_and_is_redacted():
     handler_filter = RedactionFilter()
     record = logging.LogRecord("t", logging.INFO, "", 0, "user 923001234567 asked", (), None)

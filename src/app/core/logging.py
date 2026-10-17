@@ -20,11 +20,24 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
 
 _RESERVED = set(logging.LogRecord("", 0, "", 0, "", (), None).__dict__) | {"message", "asctime"}
 
+# A Shopify id (gid://shopify/Product/1234567890123) has 13 digits and looked like a phone number.
+# It is not private (it is the store's own object id) and it is needed to debug, so it is kept.
+_SHOPIFY_GID = re.compile(r"gid://shopify/[A-Za-z]+/\d+")
+_KEPT = re.compile(r"\x00(\d+)\x00")
+
 
 def redact(text: str) -> str:
+    kept: list[str] = []
+
+    def keep(match: re.Match[str]) -> str:
+        kept.append(match.group(0))
+        return f"\x00{len(kept) - 1}\x00"
+
+    text = _SHOPIFY_GID.sub(keep, text.replace("\x00", ""))  # set aside: the phone pattern
+    # cannot touch it (a NUL in the input is dropped first, so it can never fake a placeholder)
     for pattern, repl in _PATTERNS:
         text = pattern.sub(repl, text)
-    return text
+    return _KEPT.sub(lambda match: kept[int(match.group(1))], text)
 
 
 class RedactionFilter(logging.Filter):

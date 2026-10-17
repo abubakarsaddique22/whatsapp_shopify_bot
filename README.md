@@ -17,9 +17,10 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | 5 | Language detection, router, reply-language policy, debug reply | Done (router language match 92.8%, target 95%) |
 | 6 | Voice: fake STT, Groq Whisper adapter, media download + ffmpeg, voice gate, `/dev/simulate` audio, bake-off script | Steps 1 se 5 done (tests pass). Step 6 (bake-off, live voice-note check) phone aur token ka intezar |
 | 7 | Product images: image resolver, JPEG conversion (AVIF/WebP), WhatsApp image bhejna (link ya upload), image flow (`image_request`), text-link fallback | Steps 1 se 5 done (T05, T23, T24 pass, fakes ke saath). Asli phone par images ka live check phone aur token ka intezar |
-| 8 | RAG: policies/FAQ ko chunk karna, local embeddings (sentence-transformers, `BAAI/bge-m3`), pgvector index, hybrid retrieval, `rag-ingest` / `rag-search` / `rag-eval` | Done, tag phase-8-done (baseline 2026-10-16: hit rate 97.5%, abstention 14/20). Real store par `rag-ingest` / `rag-search` ka manual check baqi |
+| 8 | RAG: policies/FAQ ko chunk karna, local embeddings (sentence-transformers, `paraphrase-multilingual-MiniLM-L12-v2`; code ka default `BAAI/bge-m3` hai, uska score abhi nahi naapa), pgvector index, hybrid retrieval, `rag-ingest` / `rag-search` / `rag-eval` | Done, tag phase-8-done (baseline 2026-10-16: hit rate 97.5%, abstention 14/20). Real store par `rag-ingest` / `rag-search` ka manual check baqi |
 | 9 | LangGraph workflow: state, permission gate, tools, clarify/refuse/handoff templates, composer, validator, graph + Postgres checkpointer, worker, `app.cli chat` | Done, tag phase-9-done (full pytest/ruff/mypy pass, asli model se 12 messages ka check 2026-10-17). Phone par 10-turn check aur LangSmith traces phone ka intezar |
-| 10 se 14 | sync, security, evals, AWS, acceptance | Shuru nahi hue |
+| 10 | Shopify sync: webhook endpoint (HMAC), webhook registration, sync worker (handlers), selective re-embedding, reconciliation jobs (delta / full / policy), monitor + alarms + dead letter | Done (tests pass, 2026-10-17: T16, T17, T18, out-of-order, retry, missed-event repair). Commit + tag phase-10-done haath se |
+| 11 se 14 | security, evals, AWS, acceptance | Shuru nahi hue |
 
 ## Code ka naqsha (`src/app/`)
 
@@ -31,20 +32,22 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | `integrations/shopify/` | Read-only Shopify GraphQL gateway |
 | `integrations/whatsapp/` | Meta payloads, client (text aur image), sender (retry rules, image fallback), media download, `media_upload.py` (image upload) |
 | `integrations/llm/` | Chat model factory (Groq), FakeLLM tests ke liye |
-| `integrations/embeddings/` | Embeddings: FakeEmbedder (tests), SentenceTransformerEmbedder (local `BAAI/bge-m3`, koi key nahi), factory |
+| `integrations/embeddings/` | Embeddings: FakeEmbedder (tests), SentenceTransformerEmbedder (local, koi key nahi; `.env` mein `paraphrase-multilingual-MiniLM-L12-v2`, khali chhodein to `BAAI/bge-m3`), factory |
 | `rag/` | `clean`, `chunk`, `index` (sirf badla hua content dobara embed), `ingest`, `retrieve` (hybrid + threshold), `rag_eval` |
 | `integrations/speech/` | Speech-to-text: FakeSTT, Groq Whisper adapter, factory |
 | `voice/` | Voice gate (confidence, limits, hallucination check), ffmpeg convert, pipeline, scoring (WER/CER) |
 | `catalog/` | Normalizer, search (pg_trgm), price, stock, specs, images, `image_formats` (JPEG rendition), importer |
 | `language/` | Roman Urdu lexicon, detection, price parser, language policy (table 6.1) |
 | `agent/` | `router.py` (intent + language), `state.py`, `gate.py` (permission gate), `nodes.py`, `composer.py`, `validator.py`, `templates.py`, `graph.py` (LangGraph + checkpointer), `tools.py`, `rules.py`, `router_eval.py`; `language_step.py` aur `image_flow.py` ab sirf `DEBUG_REPLY=true` ke liye |
-| `api/` | `/healthz`, `/readyz`, WhatsApp webhook, `/dev/*` (sirf local) |
+| `api/` | `/healthz`, `/readyz`, WhatsApp webhook, Shopify webhook (`shopify_webhook.py`: signature check, event store, jaldi 200), `/dev/*` (sirf local) |
+| `sync/` | `webhooks.py` (delivery parse), `handlers.py` (event aane par product dobara fetch, mirror update, cache saaf), `worker.py` (alag process, retry + dead letter), `reconcile.py` (delta / full / policy jobs), `monitor.py` (alarms, dead letter retry) |
+| `jobs/` | `reconcile.py` (`--mode delta/full/policy` ya `--loop`), `retention.py` |
 | `worker.py` | Inbound message uthata hai, graph se jawab banata hai, outbox mein daalta hai, bhejta hai |
 | `cli.py` | `ask`, `chat`, `import-catalog`, `eval-router`, `rag-ingest`, `rag-search`, `rag-eval` |
-| `scripts/` | `bakeoff.py` (speech provider ka muqabla), `debug_products.py` |
+| `scripts/` | `bakeoff.py` (speech provider ka muqabla), `debug_products.py`, `register_webhooks.py` (Shopify webhooks banata hai, dobara chalane par duplicate nahi) |
 | `prompts/`, `config/`, `evals/` | Router aur composer prompts, lexicon aur mappings, golden sets |
 
-Khali (baad ke phases ke liye): `sync/`, `security/`, `handoff/` (abhi stub), `jobs/`.
+Khali (baad ke phases ke liye): `security/`, `handoff/` (abhi stub).
 
 ## Windows (cmd) mein chalane ke steps
 ```
@@ -116,8 +119,8 @@ download + upload karta hai, phir bhi na jaye to product ka text link bhejta hai
 Bina image wale product par "picture nahi hai" aur link jata hai. Asli images ka check phone aur naye token ke baad.
 
 ## RAG ko local test karna
-`.env` mein `EMBEDDING_PROVIDER=sentence-transformers` aur `EMBEDDING_MODEL=BAAI/bge-m3` rakhein. Model local chalta hai,
-koi key nahi chahiye; pehli baar takreeban 2.2 GB download hota hai. Ollama sirf `eval-router` ke liye hai, embeddings ke liye nahi.
+`.env` mein `EMBEDDING_PROVIDER=sentence-transformers`, `EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2`, `RAG_TOP_K=5` aur `RAG_MIN_SCORE=0.40` rakhein (ye wahi hain jin se `rag-eval` baseline naapa gaya). Model local chalta hai,
+koi key nahi chahiye; pehli baar takreeban 470 MB download hota hai. `EMBEDDING_MODEL` khali ho to `BAAI/bge-m3` (takreeban 2.2 GB) use hota hai, us ka score abhi nahi naapa. Ollama sirf `eval-router` ke liye hai, embeddings ke liye nahi.
 ```
 uv run alembic upgrade head
 uv run python -m app.cli rag-ingest
@@ -135,6 +138,38 @@ uv run python -m app.cli chat --debug
 Ye asli model, database aur dev store se chalta hai, WhatsApp par kuch nahi jata. `/reset` conversation saaf karta hai, `/quit` band.
 Pictures milne par composer aur validator ko chhod kar seedha template caption jata hai (colour na mile to caption wahi batata hai).
 Tests: `uv run pytest tests\unit\agent tests\integration\test_graph_flow.py tests\integration\test_graph_checkpointer.py tests\integration\test_image_flow.py`
+
+## Shopify sync ko local test karna (Phase 10)
+Webhook sirf batata hai ke kuch badla; handler hamesha Shopify se object dobara fetch karta hai, isliye purana event naya data overwrite nahi kar sakta.
+`.env` mein `SHOPIFY_WEBHOOK_BASE_URL` (ngrok ka static domain, bina path ke) rakhein.
+```
+REM tests (Postgres chalna chahiye: docker compose up -d db)
+uv run pytest tests\unit\test_sync_webhooks.py tests\unit\test_webhook_admin.py tests\unit\test_reconcile.py tests\unit\test_monitor.py
+uv run pytest tests\integration\test_sync_events.py tests\integration\test_sync_handlers.py tests\integration\test_sync_repair.py tests\integration\test_reconcile.py tests\integration\test_monitor.py
+
+REM live: server, tunnel, webhooks register, sync worker (4 alag windows)
+uv run uvicorn app.main:app --reload --app-dir src
+ngrok http --url=<static domain> 8000
+uv run python scripts\register_webhooks.py
+uv run python -m app.sync.worker
+```
+Phir dev store mein product ka title, price ya stock badlein; 10 se 20 second baad mirror mein nazar aana chahiye.
+
+Ghalat ya missed webhook ki marammat (server band tha, tunnel band tha):
+```
+uv run python -m app.jobs.reconcile --mode delta     REM jo products Shopify ne edit kiye
+uv run python -m app.jobs.reconcile --mode full      REM raat ko: sab products, delete hue products yahin milte hain
+uv run python -m app.jobs.reconcile --mode policy    REM policies/pages ko knowledge base mein (sirf badla hua embed hota hai)
+uv run python -m app.jobs.reconcile --loop           REM teeno apne interval par (development)
+```
+Sehat ka check (alarm ho to exit code 1): `uv run python -m app.sync.monitor`.
+Jo event 5 koshishon ke baad bhi fail ho wo dead letter (`failed`) mein jata hai:
+```
+uv run python -m app.sync.monitor --list-failed
+uv run python -m app.sync.monitor --retry-failed              REM sab wapas pending
+uv run python -m app.sync.monitor --retry-failed --event-id 42
+```
+Known limit: bot ka live stock cache sync worker se saaf nahi hota (dono alag process hain). `LIVE_STOCK_CACHE_SECONDS=0` (default) par cache hai hi nahi, to is ka asar nahi; cache on karein to purani cheez `LIVE_STOCK_CACHE_SECONDS` ke baad khud expire hoti hai.
 
 ## Qaide
 - `.env` kabhi Git ya chat mein na dalein.
