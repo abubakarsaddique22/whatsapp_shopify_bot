@@ -9,7 +9,7 @@ Shopify no longer shows is hidden (is_visible = false), and one failure rolls th
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -117,3 +117,30 @@ async def sync_mirror(session: AsyncSession, products: list[Product]) -> ImportR
     else:
         report.skipped_hiding = True
     return report
+
+
+SyncOutcome = Literal["added", "updated", "unchanged", "hidden"]
+
+
+async def sync_product(
+    session: AsyncSession, product_id: str, product: Product | None
+) -> SyncOutcome:
+    """Bring ONE product of the mirror in line with what Shopify returned for it just now.
+
+    Used by the sync handlers (Phase 10). `product` is None when Shopify no longer shows it
+    (deleted, draft, archived, off the Online Store): it is hidden, never deleted, exactly like
+    in sync_mirror. A product whose content did not change is left alone. The caller commits.
+    """
+    if product is None:
+        return "hidden" if await repo.hide_product(session, product_id) else "unchanged"
+    content_hash = compute_hash(product)
+    known = await repo.product_state(session, product.id)
+    if known == (content_hash, True):
+        return "unchanged"
+    await repo.upsert_product(
+        session,
+        product_row(product, content_hash),
+        variant_rows(product),
+        image_rows(product),
+    )
+    return "added" if known is None else "updated"

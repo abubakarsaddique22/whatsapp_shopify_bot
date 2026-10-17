@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     shopify_client_secret: SecretStr = SecretStr("")
     shopify_auth_mode: str = "client_credentials"
     shopify_offline_token: SecretStr = SecretStr("")
+    # public https address of this server, no path (your tunnel URL in development).
+    # Used by scripts/register_webhooks.py to tell Shopify where to send webhooks.
+    shopify_webhook_base_url: str = ""
+    # how often `python -m app.jobs.reconcile --loop` runs each job (Phase 10, step 6)
+    reconcile_delta_minutes: int = 5
+    reconcile_policy_minutes: int = 60
+    reconcile_full_hours: int = 24
     low_stock_threshold: int = 3
     show_exact_stock: bool = False
     live_stock_cache_seconds: int = 0

@@ -5,7 +5,7 @@ import time
 
 from fastapi import FastAPI, Request
 
-from app.api import dev, health, whatsapp_webhook
+from app.api import dev, health, shopify_webhook, whatsapp_webhook
 from app.core.errors import register_error_handlers
 from app.core.ids import correlation_id_var, new_correlation_id
 from app.core.logging import setup_logging
@@ -44,9 +44,10 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(whatsapp_webhook.router)
+    app.include_router(shopify_webhook.router)
     if settings.app_env == "local":
         app.include_router(dev.router)  # /dev/simulate and /dev/outbox exist only locally
-    # Phase 10: shopify_webhook | Phase 11: admin
+    # Phase 11: admin
     return app
 
 

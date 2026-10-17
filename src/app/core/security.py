@@ -31,6 +31,12 @@ def valid_shopify_hmac(raw: bytes, header: str | None, client_secret: str) -> bo
     return hmac.compare_digest(base64.b64encode(digest).decode(), header)
 
 
+def sign_shopify(raw: bytes, client_secret: str) -> str:
+    """Used by tests to build a valid X-Shopify-Hmac-Sha256 header."""
+    digest = hmac.new(client_secret.encode(), raw, hashlib.sha256).digest()
+    return base64.b64encode(digest).decode()
+
+
 # ---- Shopify scope audit: the bot must stay read-only
 
 ALLOWED_SCOPES = {

@@ -5,9 +5,10 @@ Only product DATA is stored here; live price and stock always come from Shopify 
 """
 
 from collections.abc import Collection, Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, Row, case, delete, func, select, update
+from sqlalchemy import CursorResult, Row, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,12 +17,15 @@ from app.db.tables import (
     Message,
     ProductImage,
     ProductMirror,
+    SyncEvent,
+    SyncRun,
     VariantMirror,
     WhatsAppInbox,
     WhatsAppOutbox,
 )
 from app.domain.models import ConversationState
 from app.integrations.whatsapp.payloads import InboundMessage
+from app.sync.webhooks import ShopifyDelivery
 
 
 async def mirror_state(session: AsyncSession) -> dict[str, tuple[str, bool]]:
@@ -337,3 +341,238 @@ async def add_message(
         .on_conflict_do_nothing(index_elements=["wamid"])
     )
     await session.execute(stmt)
+
+
+# ---- Phase 10: Shopify sync events
+
+
+async def add_sync_event(session: AsyncSession, delivery: ShopifyDelivery) -> int | None:
+    """Store one Shopify webhook delivery as 'pending'. Returns the sync_events id, or None if
+    this webhook_id was already stored (a repeated delivery; the unique webhook_id makes that
+    harmless, T16)."""
+    stmt = (
+        insert(SyncEvent)
+        .values(
+            webhook_id=delivery.webhook_id,
+            topic=delivery.topic,
+            shop_domain=delivery.shop_domain,
+            resource_id=delivery.resource_id,
+            triggered_at=delivery.triggered_at,
+            payload=delivery.payload,
+            status="pending",
+            attempts=0,
+        )
+        .on_conflict_do_nothing(index_elements=["webhook_id"])
+        .returning(SyncEvent.id)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def product_state(session: AsyncSession, product_id: str) -> tuple[str, bool] | None:
+    """(content_hash, is_visible) of ONE product in the mirror, or None if it was never there."""
+    result = await session.execute(
+        select(ProductMirror.content_hash, ProductMirror.is_visible).where(
+            ProductMirror.id == product_id
+        )
+    )
+    row = result.one_or_none()
+    return None if row is None else (row[0], row[1])
+
+
+async def hide_product(session: AsyncSession, product_id: str) -> bool:
+    """Hide ONE product (is_visible = false). True if it was visible before.
+
+    Hidden, not deleted: search skips it, but the history stays. Same rule as hide_missing.
+    """
+    result = await session.execute(
+        update(ProductMirror)
+        .where(ProductMirror.id == product_id, ProductMirror.is_visible.is_(True))
+        .values(is_visible=False)
+    )
+    return (cast("CursorResult[Any]", result).rowcount or 0) > 0
+
+
+# The sync worker claims a row, does its work and commits ONCE (same idea as the inbox above).
+
+
+async def claim_sync_event(session: AsyncSession) -> SyncEvent | None:
+    """Oldest pending event that is due (a retry waits for next_attempt_at).
+
+    SKIP LOCKED: two sync workers never take the same row."""
+    result = await session.execute(
+        select(SyncEvent)
+        .where(
+            SyncEvent.status == "pending",
+            or_(SyncEvent.next_attempt_at.is_(None), SyncEvent.next_attempt_at <= func.now()),
+        )
+        .order_by(SyncEvent.id)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one_or_none()
+
+
+async def finish_sync_event(session: AsyncSession, event_id: int, status: str) -> None:
+    """status: done | ignored."""
+    await session.execute(
+        update(SyncEvent)
+        .where(SyncEvent.id == event_id)
+        .values(status=status, processed_at=func.now(), error=None, next_attempt_at=None)
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def record_sync_failure(
+    session: AsyncSession,
+    event_id: int,
+    error: str,
+    *,
+    attempts_before: int,
+    max_attempts: int,
+    retry_in_seconds: int,
+) -> bool:
+    """Count one failed attempt. Back to 'pending' to retry after a wait, or 'failed' (dead
+    letter) once max_attempts is reached. Returns True if the event is now 'failed'."""
+    attempts = attempts_before + 1
+    failed = attempts >= max_attempts
+    await session.execute(
+        update(SyncEvent)
+        .where(SyncEvent.id == event_id)
+        .values(
+            attempts=attempts,
+            error=error[:500],
+            status="failed" if failed else "pending",
+            next_attempt_at=None
+            if failed
+            else datetime.now(UTC) + timedelta(seconds=retry_in_seconds),
+            processed_at=func.now() if failed else None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return failed
+
+
+# ---- Phase 10: reconciliation runs (sync_runs)
+
+
+async def start_sync_run(session: AsyncSession, kind: str) -> tuple[int, datetime]:
+    """Write a 'running' row. Returns (run id, started_at). Commit it at once, so a crash during
+    the run still leaves a visible 'running' row behind."""
+    result = await session.execute(
+        insert(SyncRun)
+        .values(kind=kind, status="running")
+        .returning(SyncRun.id, SyncRun.started_at)
+    )
+    row = result.one()
+    return int(row[0]), row[1]
+
+
+async def last_ok_watermark(session: AsyncSession, kind: str) -> datetime | None:
+    """Watermark of the latest run of this kind that finished 'ok'. A failed run never counts."""
+    result = await session.execute(
+        select(SyncRun.watermark)
+        .where(SyncRun.kind == kind, SyncRun.status == "ok", SyncRun.watermark.is_not(None))
+        .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def finish_sync_run(
+    session: AsyncSession,
+    run_id: int,
+    status: str,
+    counts: dict[str, Any],
+    error: str | None,
+    watermark: datetime | None,
+) -> None:
+    """status: ok | failed. The watermark is only given for an 'ok' run."""
+    await session.execute(
+        update(SyncRun)
+        .where(SyncRun.id == run_id)
+        .values(
+            status=status,
+            finished_at=func.now(),
+            counts=counts,
+            error=error[:500] if error else None,
+            watermark=watermark,
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+
+# ---- Phase 10: monitor (read only, plus the dead-letter retry)
+
+
+async def sync_event_status_counts(session: AsyncSession) -> dict[str, int]:
+    """{status: how many sync_events} (pending, done, ignored, failed ...)."""
+    rows = await session.execute(select(SyncEvent.status, func.count()).group_by(SyncEvent.status))
+    return {status: int(count) for status, count in rows.all()}
+
+
+async def oldest_due_event_time(session: AsyncSession) -> datetime | None:
+    """received_at of the oldest pending event that is due now. An event that waits for its next
+    retry (next_attempt_at in the future) is not counted: it is waiting on purpose."""
+    result = await session.execute(
+        select(func.min(SyncEvent.received_at)).where(
+            SyncEvent.status == "pending",
+            or_(SyncEvent.next_attempt_at.is_(None), SyncEvent.next_attempt_at <= func.now()),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def list_failed_events(session: AsyncSession, limit: int = 20) -> Sequence[Row[Any]]:
+    """The dead letter: events that failed for good, newest first."""
+    result = await session.execute(
+        select(
+            SyncEvent.id,
+            SyncEvent.topic,
+            SyncEvent.resource_id,
+            SyncEvent.attempts,
+            SyncEvent.error,
+            SyncEvent.received_at,
+        )
+        .where(SyncEvent.status == "failed")
+        .order_by(SyncEvent.id.desc())
+        .limit(limit)
+    )
+    return cast("Sequence[Row[Any]]", result.all())
+
+
+async def requeue_failed_events(session: AsyncSession, event_id: int | None = None) -> int:
+    """Give dead-letter events a fresh start: back to 'pending' with 0 attempts. One event, or
+    all of them when event_id is None. Returns how many were requeued. The caller commits.
+
+    Safe: a handler refetches the object from Shopify, so running an old event again can never
+    bring back old data.
+    """
+    stmt = update(SyncEvent).where(SyncEvent.status == "failed")
+    if event_id is not None:
+        stmt = stmt.where(SyncEvent.id == event_id)
+    result = await session.execute(
+        stmt.values(
+            status="pending", attempts=0, next_attempt_at=None, processed_at=None
+        ).execution_options(synchronize_session=False)
+    )
+    return cast("CursorResult[Any]", result).rowcount or 0
+
+
+async def last_sync_run(session: AsyncSession, kind: str) -> Row[Any] | None:
+    """(status, started_at, finished_at, error) of the newest run of this kind, or None."""
+    result = await session.execute(
+        select(SyncRun.status, SyncRun.started_at, SyncRun.finished_at, SyncRun.error)
+        .where(SyncRun.kind == kind)
+        .order_by(SyncRun.started_at.desc(), SyncRun.id.desc())
+        .limit(1)
+    )
+    return cast("Row[Any] | None", result.one_or_none())
+
+
+async def last_ok_run_finished(session: AsyncSession, kind: str) -> datetime | None:
+    """When the newest run of this kind that ended 'ok' finished."""
+    result = await session.execute(
+        select(func.max(SyncRun.finished_at)).where(SyncRun.kind == kind, SyncRun.status == "ok")
+    )
+    return result.scalar_one_or_none()

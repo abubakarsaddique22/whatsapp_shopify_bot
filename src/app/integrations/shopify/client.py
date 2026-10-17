@@ -2,7 +2,8 @@
 
 One function: `graphql()`. It adds the access token, retries a few times on timeouts,
 throttling and 5xx errors, gets a fresh token once after a 401, and refuses any mutation
-(the bot is read-only).
+(the bot is read-only). The one exception is `allow_mutation=True`, used ONLY by
+integrations/shopify/webhook_admin.py to manage webhook subscriptions (no store data changes).
 """
 
 import asyncio
@@ -43,9 +44,13 @@ async def _post(url: str, payload: dict) -> httpx.Response:
         return await http.post(url, json=payload, headers=headers)
 
 
-async def graphql(query: str, variables: dict | None = None) -> dict:
-    """Run a read-only GraphQL query and return the 'data' part of the answer."""
-    if _MUTATION.search(query):
+async def graphql(
+    query: str, variables: dict | None = None, *, allow_mutation: bool = False
+) -> dict:
+    """Run a read-only GraphQL query and return the 'data' part of the answer.
+
+    Mutations are refused unless allow_mutation=True. Only webhook_admin.py passes it."""
+    if not allow_mutation and _MUTATION.search(query):
         raise ShopifyError("Mutations are not allowed: this bot is read-only")
 
     url = f"https://{shop_host()}/admin/api/{get_settings().shopify_api_version}/graphql.json"

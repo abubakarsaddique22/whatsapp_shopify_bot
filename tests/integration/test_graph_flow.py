@@ -781,9 +781,7 @@ async def test_a_colour_without_its_own_picture_is_admitted_in_the_reply_languag
 
     state = await bot.turn(
         "black wali photo bhejo",
-        router_says(
-            "image_request", language=language, product_query="Qorvex Reef", color="black"
-        ),
+        router_says("image_request", language=language, product_query="Qorvex Reef", color="black"),
     )
 
     caption = to_replies(state)[0].caption

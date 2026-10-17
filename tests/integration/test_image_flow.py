@@ -269,9 +269,7 @@ async def test_t05_colour_without_its_own_picture_gets_the_main_one_and_says_so(
     (queued,) = await outbox(session)
     assert queued.kind == "image"
     assert queued.media_url == REEF_FEATURED
-    missing = await template(
-        session, "picture_colour_missing", title="Qorvex Reef", colour="black"
-    )
+    missing = await template(session, "picture_colour_missing", title="Qorvex Reef", colour="black")
     assert queued.caption == missing  # no false claim about the colour, in the reply language
 
 

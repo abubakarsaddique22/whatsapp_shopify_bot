@@ -6,6 +6,7 @@ if Shopify cannot answer, the state is UNKNOWN.
 """
 
 import time
+from collections.abc import Iterable
 
 from pydantic import BaseModel
 
@@ -82,6 +83,17 @@ _now = time.monotonic  # a module attribute so tests can replace the clock
 
 def clear_live_cache() -> None:
     _cache.clear()
+
+
+def forget_live_variants(variant_ids: Iterable[str]) -> None:
+    """Drop the cached live copy of these variants (the sync handlers call it after a change).
+
+    The cache lives inside ONE process. A sync worker running as its own process can only clear
+    its own copy; the bot worker's cache expires by itself after LIVE_STOCK_CACHE_SECONDS, which
+    is 0 (no cache) by default, so a stale price or stock is never older than that.
+    """
+    for variant_id in variant_ids:
+        _cache.pop(variant_id, None)
 
 
 async def fetch_live_variant(variant_id: str, *, ttl_seconds: int | None = None) -> Variant | None:

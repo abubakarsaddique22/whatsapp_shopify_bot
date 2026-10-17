@@ -55,6 +55,13 @@ query VariantById($id: ID!) {{
 }}
 """
 
+# inventory_levels/update only carries the inventory item id: this finds the product it belongs to.
+PRODUCT_OF_INVENTORY_ITEM = """
+query ProductOfInventoryItem($id: ID!) {
+  inventoryItem(id: $id) { id variant { id product { id } } }
+}
+"""
+
 POLICIES = """
 query Policies {
   shop { shopPolicies { type title body url } }

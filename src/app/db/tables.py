@@ -272,7 +272,7 @@ class SyncEvent(Base):
     __tablename__ = "sync_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    webhook_id: Mapped[str] = mapped_column(String(100))  # X-Shopify-Webhook-Id (VERIFY name)
+    webhook_id: Mapped[str] = mapped_column(String(100))  # X-Shopify-Event-Id, else Webhook-Id
     topic: Mapped[str] = mapped_column(String(64))  # products/update, inventory_levels/update ...
     shop_domain: Mapped[str] = mapped_column(String(200))
     resource_id: Mapped[str | None] = mapped_column(String)  # Shopify global id of the object
