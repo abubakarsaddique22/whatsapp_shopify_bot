@@ -69,6 +69,17 @@ def plain_product(no: int, title: str) -> Product:
 PLAIN = plain_product(9004, "Quillon Plain")  # no colour anywhere
 PLAIN_BLACK = plain_product(9005, "Quillon Plain Black")  # colour only in the name
 
+# Two products that share most words; colour words are part of the TITLE (like the real store)
+VEXOR_A = plain_product(9006, "Vexor Silver Gold Black Textured - AAA").model_copy(
+    update={"vendor": "Vexor"}
+)
+VEXOR_B = plain_product(9007, "Vexor Silver Green Textured - AAA").model_copy(
+    update={"vendor": "Vexor"}
+)
+# Two products with the very same title: the title alone cannot tell them apart
+DUPE_A = plain_product(9008, "Dupe Watch").model_copy(update={"vendor": "Dupe"})
+DUPE_B = plain_product(9009, "Dupe Watch").model_copy(update={"vendor": "Dupe"})
+
 
 @pytest.fixture
 async def session() -> AsyncIterator[AsyncSession]:
@@ -77,7 +88,17 @@ async def session() -> AsyncIterator[AsyncSession]:
         async with engine.connect() as conn:
             transaction = await conn.begin()
             db = AsyncSession(bind=conn, expire_on_commit=False)
-            for product in (TIDE, TIDE_ULTRA, GA, PLAIN, PLAIN_BLACK):
+            for product in (
+                TIDE,
+                TIDE_ULTRA,
+                GA,
+                PLAIN,
+                PLAIN_BLACK,
+                VEXOR_A,
+                VEXOR_B,
+                DUPE_A,
+                DUPE_B,
+            ):
                 await repo.upsert_product(
                     db,
                     product_row(product, compute_hash(product)),
@@ -172,3 +193,29 @@ async def test_t14_hidden_product_behaves_like_a_missing_one(session):
 async def test_limit_is_never_more_than_five(session):
     result = await search_products(session, "zorbex", limit=50)
     assert len(result.candidates) <= 5
+
+
+async def test_full_title_with_colour_words_finds_that_one_product(session):
+    # Found by the eval (Phase 12): the colour words used to be cut out of the query, the rest
+    # matched both Vexor products equally and the bot asked 'which one?'.
+    for query in (
+        "Vexor Silver Gold Black Textured - AAA",
+        "vexor silver gold black textured aaa",
+    ):
+        result = await search_products(session, query)
+        assert result.kind == MatchKind.ONE, query
+        assert [c.title for c in result.candidates] == [VEXOR_A.title], query
+
+
+async def test_part_of_a_title_with_colour_words_still_lists_both_products(session):
+    result = await search_products(session, "vexor textured aaa")
+    titles = [c.title for c in result.candidates]
+    assert VEXOR_A.title in titles
+    assert VEXOR_B.title in titles
+
+
+async def test_two_products_with_the_same_title_stay_ambiguous(session):
+    result = await search_products(session, "Dupe Watch")
+    assert result.kind == MatchKind.AMBIGUOUS
+    titles = [c.title for c in result.candidates]
+    assert titles.count("Dupe Watch") == 2  # both are offered, the bot asks which one

@@ -10,9 +10,11 @@ from a live Shopify call (catalog/stock.py -> fetch_live_variant). The mirror pr
 to apply a max_price filter.
 """
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,6 +62,75 @@ _RANK_SQL = text(
     LIMIT :pool
     """
 )
+
+
+# A customer who types ONE product's full title (copied from the shop) gets that product, even
+# when words of the title are colours ('Silver Gold Black Textured') that parse_query would take
+# out. Only when no OTHER visible title contains these words: 'zorbex tide' stays ambiguous
+# while 'Zorbex Tide Ultra' exists (T13).
+_EXACT_SQL = text(
+    """
+    WITH p AS (
+        SELECT id, title, url, vendor, tags,
+               trim(regexp_replace(lower(title), '[^a-z0-9]+', ' ', 'g')) AS t
+        FROM products_mirror
+        WHERE is_visible
+    )
+    SELECT id, title, url, vendor, tags, CAST(1.0 AS real) AS score
+    FROM p
+    WHERE t = CAST(:t AS text)
+      AND (SELECT count(*) FROM p AS other
+           WHERE strpos(' ' || other.t || ' ', ' ' || CAST(:t AS text) || ' ') > 0) = 1
+    """
+)
+
+
+# The customer's whole MESSAGE contains ONE product's full title ('How much is the PP - Nautilus
+# Silver Brown - AAA Quality?'). Same safety rule as _EXACT_SQL: no OTHER visible title may contain
+# these words, so 'zorbex tide' stays ambiguous while 'Zorbex Tide Ultra' exists (T13). The longest
+# title wins when a message holds more than one.
+_NAMED_SQL = text(
+    """
+    WITH p AS (
+        SELECT title,
+               trim(regexp_replace(lower(title), '[^a-z0-9]+', ' ', 'g')) AS t
+        FROM products_mirror
+        WHERE is_visible
+    )
+    SELECT title, t AS norm
+    FROM p
+    WHERE t <> ''
+      AND strpos(CAST(:msg AS text), ' ' || t || ' ') > 0
+      AND (SELECT count(*) FROM p AS other
+           WHERE strpos(' ' || other.t || ' ', ' ' || p.t || ' ') > 0) = 1
+    ORDER BY length(t) DESC
+    """
+)
+
+MIN_NAMED_WORDS = 2  # a one-word title ('Watch') would be 'found' in almost any message
+MIN_NAMED_CHARS = 8
+
+
+async def title_named_in_text(session: AsyncSession | None, message: str) -> str | None:
+    """The title of the ONE visible product whose full title is written in `message`, or None.
+
+    Needs no router and no ranking, so a title with colour words ('Silver Brown') or a crowd of
+    similar titles (many 'PP - Nautilus ...') cannot hide it. No session (unit tests that use
+    fake tools): nothing to look up.
+    """
+    if session is None:
+        return None
+    normalized = re.sub(r"[^a-z0-9]+", " ", message.lower()).strip()
+    if not normalized:
+        return None
+    rows = (await session.execute(_NAMED_SQL, {"msg": f" {normalized} "})).all()
+    rows = [
+        r for r in rows if len(r.norm.split()) >= MIN_NAMED_WORDS and len(r.norm) >= MIN_NAMED_CHARS
+    ]
+    if not rows:
+        return None
+    longest = [r for r in rows if len(r.norm) == len(rows[0].norm)]
+    return str(longest[0].title) if len(longest) == 1 else None
 
 
 class MatchKind(StrEnum):
@@ -186,6 +257,14 @@ def classify(candidates: list[Candidate]) -> MatchKind:
 # ---- search
 
 
+async def _exact_title_rows(session: AsyncSession, query: str) -> list[Any]:
+    """The one visible product whose whole title is the query, or [] (see _EXACT_SQL)."""
+    normalized = re.sub(r"[^a-z0-9]+", " ", query.lower()).strip()
+    if not normalized:
+        return []
+    return list((await session.execute(_EXACT_SQL, {"t": normalized})).all())
+
+
 async def search_products(
     session: AsyncSession,
     query: str,
@@ -197,21 +276,26 @@ async def search_products(
 ) -> SearchResult:
     """Find visible products for a customer's words. Never returns hidden products."""
     limit = max(1, min(limit, MAX_RESULTS))
-    words, colour_in_query = parse_query(query)
-    wanted = colour_of_value(colour) if colour else colour_in_query
-    if not words:
-        return SearchResult(MatchKind.NONE, [], 0, wanted)
+    named: list[Any] = await _exact_title_rows(session, query)
+    if named:
+        # The whole title was typed: colour words in it belong to the title, not to a filter.
+        wanted = colour_of_value(colour) if colour else None
+    else:
+        words, colour_in_query = parse_query(query)
+        wanted = colour_of_value(colour) if colour else colour_in_query
+        if not words:
+            return SearchResult(MatchKind.NONE, [], 0, wanted)
 
-    glued = words.replace(" ", "")
-    params = {
-        "q": words,
-        "qc": glued if len(glued) >= MIN_COMPACT_LEN else "",
-        "pool": CANDIDATE_POOL,
-    }
-    rows = (await session.execute(_RANK_SQL, params)).all()
-    named = [row for row in rows if row.score >= MIN_SCORE]
-    if not named:
-        return SearchResult(MatchKind.NONE, [], 0, wanted)
+        glued = words.replace(" ", "")
+        params = {
+            "q": words,
+            "qc": glued if len(glued) >= MIN_COMPACT_LEN else "",
+            "pool": CANDIDATE_POOL,
+        }
+        rows = (await session.execute(_RANK_SQL, params)).all()
+        named = [row for row in rows if row.score >= MIN_SCORE]
+        if not named:
+            return SearchResult(MatchKind.NONE, [], 0, wanted)
 
     variant_rows = await session.execute(
         select(

@@ -118,7 +118,7 @@ async def test_text_message_goes_through_the_graph(session: AsyncSession) -> Non
     inbox_id = await queue_inbound(session, "text", "hello")
     await process(session)
 
-    assert [r.body for r in await outbox_rows(session)] == [render("ask_detail", "en_roman_ur")]
+    assert [r.body for r in await outbox_rows(session)] == [render("ask_detail", "roman_ur")]
     assert await inbox_status(session, inbox_id) == "done"
     result = await session.execute(
         select(Message.direction, Message.body).where(

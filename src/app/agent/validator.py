@@ -66,7 +66,7 @@ _ORDER_REF = re.compile(r"#\s*\d{3,}|\d{4,}")
 _WORD = re.compile(r"[A-Za-z]+")
 
 _COLOUR_KEYS = {"colour", "colours", "colours_offered"}
-_TITLE_KEYS = {"title", "variant_title"}
+_TITLE_KEYS = {"title", "variant_title", "colour_names"}  # colours are read out of these texts
 
 
 @dataclass(frozen=True)

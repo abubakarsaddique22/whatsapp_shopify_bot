@@ -20,7 +20,7 @@ from app.language.detect import detect_language
 # (used when we do not know the language, or a voice note was unclear).
 ReplyLang = Literal["en", "roman_ur", "mixed", "ur", "en_roman_ur"]
 
-SWITCH_AFTER = 2  # blueprint 6.1: two messages in a row in another language switch the language
+SWITCH_AFTER = 1  # owner decision 2026-10-18: each message has its own language (was 2)
 MIN_HITS_FOR_MISMATCH = 3  # a reply needs this many wrong-language words before it is flagged
 
 _ASK_ENGLISH = re.compile(
@@ -54,14 +54,16 @@ def next_language(current: Lang, previous: Lang | None, detected: Lang, text: st
     - An explicit request always wins.
     - UNKNOWN ('pic', 'hello', Hindi) never changes anything: the old language stays.
     - A new conversation takes the first usable language at once.
-    - A different language needs SWITCH_AFTER messages in a row; one stray message is ignored.
+    - A different language switches after SWITCH_AFTER messages in a row. SWITCH_AFTER is 1 now
+      (owner decision), so the language of the latest clear message is used at once; with 2 a
+      stray message would be ignored.
     """
     asked = asked_language(text)
     if asked is not None:
         return asked
     if detected == Lang.UNKNOWN:
         return current
-    if current == Lang.UNKNOWN or detected == current:
+    if SWITCH_AFTER <= 1 or current == Lang.UNKNOWN or detected == current:
         return detected
     if detected == previous:  # second message in a row in the new language
         return detected
@@ -71,21 +73,18 @@ def next_language(current: Lang, previous: Lang | None, detected: Lang, text: st
 def reply_language(
     language: Lang, *, urdu_script_replies: bool = False, low_confidence: bool = False
 ) -> ReplyLang:
-    """Table 6.1: conversation language -> reply language.
+    """Table 6.1, changed 2026-10-18 (owner decision): conversation language -> reply language.
 
-    Urdu script and Punjabi get Roman Urdu (A4: needs client confirmation); a setting can turn
-    on Urdu-script replies for Urdu. Unknown language or a doubtful voice transcript gets the
-    short bilingual line (ask to repeat / offer a human). Never a voice reply.
+    English conversation -> English. Everything else (Roman Urdu, mixed, Urdu script, Punjabi,
+    Hindi, unknown, a doubtful voice transcript) -> Roman Urdu. A setting can turn on Urdu-script
+    replies for Urdu. Never a voice reply. `low_confidence` is kept so callers do not change: a
+    doubtful transcript is answered in the conversation's language, with the same rule.
     """
-    if low_confidence or language == Lang.UNKNOWN:
-        return "en_roman_ur"
     if language == Lang.EN:
         return "en"
-    if language == Lang.MIXED:
-        return "mixed"
     if language == Lang.UR and urdu_script_replies:
         return "ur"
-    return "roman_ur"  # roman_ur, ur, pa
+    return "roman_ur"  # roman_ur, mixed, ur, pa, unknown
 
 
 def reply_matches(reply: str, target: ReplyLang) -> bool:

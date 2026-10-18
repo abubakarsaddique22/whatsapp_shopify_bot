@@ -35,7 +35,12 @@ def get_stt_provider(settings: Settings | None = None) -> SpeechToTextProvider:
             raise ConfigError("Set STT_API_KEY in .env (the same Groq key as LLM_API_KEY is fine)")
         if not settings.stt_model:
             raise ConfigError("Set STT_MODEL in .env, for example whisper-large-v3-turbo")
-        return GroqSTT(key, settings.stt_model, float(settings.stt_timeout_seconds))
+        return GroqSTT(
+            key,
+            settings.stt_model,
+            float(settings.stt_timeout_seconds),
+            prompt=settings.stt_prompt,
+        )
 
     if provider in NOT_WRITTEN:
         raise ConfigError(f"STT_PROVIDER={provider} is not written (the project uses groq)")

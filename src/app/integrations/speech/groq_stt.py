@@ -99,10 +99,11 @@ def parse_response(payload: dict[str, Any], *, model: str, latency_ms: int) -> T
 class GroqSTT:
     name = "groq"
 
-    def __init__(self, api_key: str, model: str, timeout: float = 30.0) -> None:
+    def __init__(self, api_key: str, model: str, timeout: float = 30.0, prompt: str = "") -> None:
         self._api_key = api_key
         self.model = model
         self._timeout = timeout
+        self._prompt = prompt.strip()
 
     async def transcribe(
         self, wav_path: Path, language_hint: str | None = None
@@ -110,6 +111,8 @@ class GroqSTT:
         form = {"model": self.model, "response_format": "verbose_json", "temperature": "0"}
         if language_hint:
             form["language"] = language_hint
+        if self._prompt:
+            form["prompt"] = self._prompt  # spelling hint for Whisper (script, product names)
         audio = wav_path.read_bytes()  # at most a few MB: the worker caps the length
 
         started = time.perf_counter()

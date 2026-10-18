@@ -624,3 +624,146 @@ async def test_clarify_node_lists_at_most_the_option_cap():
 
     text = update["response"].response_text
     assert "C7" in text and "C8" not in text  # the first MAX_OPTIONS (8) options, not all 30
+
+
+# ---- an ambiguous search + a colour from the router: search again with the colour
+
+
+def install_searches(monkeypatch, *answers: dict) -> list[dict]:
+    """The search tool answers with `answers` one after the other; returns the recorded calls."""
+    queue = list(answers)
+    calls: list[dict] = []
+
+    async def fake(session, **kwargs):
+        calls.append(kwargs)
+        return result(TOOL_SEARCH, queue.pop(0))
+
+    monkeypatch.setitem(TOOLS, TOOL_SEARCH, fake)
+    return calls
+
+
+async def test_an_ambiguous_search_is_repeated_with_the_colour_the_customer_named(
+    tools, monkeypatch
+):
+    # 'BRTLNG - Chronomat Black' reaches the node as product_query 'BRTLNG Chronomat' + black
+    searches = install_searches(monkeypatch, search_many(), search_one())
+    tools.install(TOOL_PRICE, {"match": "one"})
+    state = turn(Intent.PRICE, product_query="GA-2100", color="black")
+
+    update = await run_tools_node(state, deps())
+
+    assert searches == [{"query": "GA-2100"}, {"query": "GA-2100", "colour": "black"}]
+    assert tools.args(TOOL_PRICE) == {"product_id": PID, "colour": "black", "size_mm": None}
+    assert [r.tool for r in update["tool_results"]] == [TOOL_SEARCH, TOOL_PRICE]
+    assert update["tool_results"][0].data["kind"] == "one"  # only the deciding search stays
+    assert update["conversation"].current_product_id == PID
+    assert update["conversation"].candidate_product_ids == [PID]
+    assert update["tool_calls_made"] == 3
+    assert route_after_tools({**state, **update}) == "compose"
+
+
+async def test_if_the_colour_search_is_not_one_product_the_first_result_stays(tools, monkeypatch):
+    searches = install_searches(monkeypatch, search_many(), search_many())
+    tools.install(TOOL_PRICE, {"match": "one"})
+    state = turn(Intent.PRICE, product_query="GA-2100", color="black")
+
+    update = await run_tools_node(state, deps())
+
+    assert len(searches) == 2
+    assert tools.calls == []  # no price for a product nobody chose
+    assert [r.tool for r in update["tool_results"]] == [TOOL_SEARCH]  # the colour search is dropped
+    assert update["conversation"].current_product_id is None
+    assert route_after_tools({**state, **update}) == "clarify"
+
+
+async def test_no_second_search_without_a_colour(tools, monkeypatch):
+    searches = install_searches(monkeypatch, search_many())
+    update = await run_tools_node(turn(Intent.PRICE, product_query="GA-2100"), deps())
+    assert len(searches) == 1
+    assert update["tool_calls_made"] == 1
+
+
+async def test_no_second_search_when_nothing_matched(tools, monkeypatch):
+    searches = install_searches(monkeypatch, {"kind": "none", "candidates": []})
+    state = turn(Intent.PRICE, product_query="zzz", color="black")
+    await run_tools_node(state, deps())
+    assert len(searches) == 1
+
+
+async def test_a_plain_product_search_is_not_repeated(tools, monkeypatch):
+    # it already used the colour as a filter in its first search
+    searches = install_searches(monkeypatch, search_many())
+    state = turn(Intent.PRODUCT_SEARCH, product_query="digital", color="black")
+    await run_tools_node(state, deps())
+    assert len(searches) == 1
+    assert searches[0]["colour"] == "black"
+
+
+async def test_a_clear_first_search_is_not_repeated(tools, monkeypatch):
+    searches = install_searches(monkeypatch, search_one())
+    tools.install(TOOL_PRICE, {"match": "one"})
+    await run_tools_node(turn(Intent.PRICE, product_query="GA-2100", color="black"), deps())
+    assert searches == [{"query": "GA-2100"}]
+
+
+# ---- an ambiguous search, but the customer wrote ONE candidate's full title
+
+CTZN_TITLES = (
+    "CTZN - Tsuyosa Silver Black Quartz - AAA Quality",
+    "CTZN - Tsuyosa Silver Blue Quartz - AAA Quality",
+    "CTZN - Tsuyosa Silver Green Quartz - AAA Quality",
+)
+
+
+def search_titles(*titles: str) -> dict:
+    return {
+        "kind": "ambiguous",
+        "candidates": [
+            {"product_id": f"gid://shopify/Product/{n}", "title": title}
+            for n, title in enumerate(titles, start=1)
+        ],
+    }
+
+
+async def test_the_full_title_the_customer_wrote_decides_between_similar_products(
+    tools, monkeypatch
+):
+    # Found by the eval: the router keeps ONE colour ('silver'), all three titles have it
+    searches = install_searches(monkeypatch, search_titles(*CTZN_TITLES))
+    tools.install(TOOL_PRICE, {"match": "one"})
+    text = "CTZN - Tsuyosa Silver Black Quartz - AAA Quality ki price kya hai?"
+    state = turn(Intent.PRICE, text=text, product_query="CTZN Tsuyosa Quartz", color="silver")
+
+    update = await run_tools_node(state, deps())
+
+    assert len(searches) == 1  # no second search needed
+    assert tools.args(TOOL_PRICE)["product_id"] == "gid://shopify/Product/1"
+    assert [r.tool for r in update["tool_results"]] == [TOOL_SEARCH, TOOL_PRICE]
+    assert update["tool_results"][0].data["kind"] == "one"
+    assert update["conversation"].current_product_id == "gid://shopify/Product/1"
+    assert route_after_tools({**state, **update}) == "compose"
+
+
+async def test_a_title_that_is_part_of_another_title_stays_a_question(tools, monkeypatch):
+    # T13: 'Zorbex Tide' was written, but 'Zorbex Tide Ultra' contains it
+    install_searches(monkeypatch, search_titles("Zorbex Tide", "Zorbex Tide Ultra"))
+    state = turn(Intent.PRICE, text="zorbex tide price?", product_query="zorbex tide")
+    update = await run_tools_node(state, deps())
+    assert tools.calls == []
+    assert route_after_tools({**state, **update}) == "clarify"
+
+
+async def test_no_title_written_in_full_stays_a_question(tools, monkeypatch):
+    install_searches(monkeypatch, search_titles(*CTZN_TITLES))
+    state = turn(Intent.PRICE, text="tsuyosa price?", product_query="tsuyosa")
+    update = await run_tools_node(state, deps())
+    assert tools.calls == []
+    assert route_after_tools({**state, **update}) == "clarify"
+
+
+async def test_two_full_titles_of_the_same_length_stay_a_question(tools, monkeypatch):
+    install_searches(monkeypatch, search_titles("Alpha One", "Alpha Two"))
+    state = turn(Intent.PRICE, text="alpha one or alpha two?", product_query="alpha")
+    update = await run_tools_node(state, deps())
+    assert tools.calls == []
+    assert route_after_tools({**state, **update}) == "clarify"

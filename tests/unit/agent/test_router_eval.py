@@ -244,7 +244,7 @@ async def test_t08_t09_over_the_whole_golden_set():
     expected = {
         Lang.EN: "en",
         Lang.ROMAN_UR: "roman_ur",
-        Lang.MIXED: "mixed",
+        Lang.MIXED: "roman_ur",  # English + Roman Urdu mixed -> Roman Urdu (owner, 2026-10-18)
         Lang.UR: "roman_ur",  # Urdu script gets Roman Urdu (A4, needs client confirmation)
         Lang.PA: "roman_ur",
     }

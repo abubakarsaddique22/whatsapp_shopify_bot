@@ -68,6 +68,8 @@ def use_settings(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> None:
         "stt_fake_text": "",
         "stt_min_words": 2,
         "stt_min_confidence": 0.5,
+        "stt_allowed_languages": "en,ur,pa",
+        "stt_language_hint": "",
         "max_audio_seconds": 90,
         "max_audio_bytes": 5_000_000,
         "urdu_script_replies": False,
@@ -220,7 +222,8 @@ async def test_t11_unclear_punjabi_gets_a_clarification(
     inbox_id = await queue_voice(session)
     await process(session)
 
-    expected = clarification_message(GateReason.LOW_CONFIDENCE, "en_roman_ur")
+    # a new conversation has no language yet: not English -> Roman Urdu (owner, 2026-10-18)
+    expected = clarification_message(GateReason.LOW_CONFIDENCE, "roman_ur")
     assert await reply_bodies(session) == [expected]
     assert await inbox_status(session, inbox_id) == "done"
 
@@ -255,7 +258,7 @@ async def test_t22_a_doubtful_transcript_is_not_kept_and_not_answered(
 
     assert llm.calls == []
     assert await reply_bodies(session) == [
-        clarification_message(GateReason.LOW_CONFIDENCE, "en_roman_ur")
+        clarification_message(GateReason.LOW_CONFIDENCE, "roman_ur")
     ]
     assert await kept_messages(session) == [("in", "[voice: unclear]")]  # no doubtful text kept
 
@@ -292,7 +295,9 @@ async def test_a_too_long_voice_note_is_refused_before_transcription(
     await process(session)
 
     (body,) = await reply_bodies(session)
-    assert "too long" in body
+    # no language yet: Roman Urdu (owner, 2026-10-18)
+    assert body == clarification_message(GateReason.TOO_LONG, "roman_ur")
+    assert "lambi" in body
     assert stt.calls == []
     assert events == ["open", "closed"]
 
@@ -308,7 +313,7 @@ async def test_a_file_too_big_for_the_download_is_refused(
     await process(session)
 
     (body,) = await reply_bodies(session)
-    assert body == clarification_message(GateReason.TOO_LARGE, "en_roman_ur")
+    assert body == clarification_message(GateReason.TOO_LARGE, "roman_ur")
     assert stt.calls == []
 
 

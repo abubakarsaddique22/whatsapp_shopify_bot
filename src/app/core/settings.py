@@ -81,6 +81,17 @@ class Settings(BaseSettings):
     stt_timeout_seconds: int = 30
     stt_min_confidence: float = 0.0
     stt_min_words: int = 2
+    # Languages the voice gate accepts, comma separated (codes: en, ur, pa, hi ...). Whisper often
+    # labels Pakistani Urdu as Hindi, so 'hi' may be needed; the bake-off decides.
+    stt_allowed_languages: str = "en,ur,pa"
+    # Language hint sent to Whisper (for example ur). Empty = Whisper detects the language itself.
+    # A fixed hint makes English voice notes worse, so keep it empty unless the bake-off says so.
+    stt_language_hint: str = ""
+    # A short text sent to Whisper as its `prompt`: it nudges the spelling (Latin script instead of
+    # Devanagari, product names like GA-2100). Write it like the customers talk, for example:
+    # "GA-2100 ki price kya hai? Black wali watch available hai? Rolex, Casio, G-Shock."
+    # Empty = no prompt. Keep it under about 200 words.
+    stt_prompt: str = ""
     # local development only: with STT_PROVIDER=fake every voice note "says" this text
     stt_fake_text: str = ""
 
@@ -139,6 +150,12 @@ class Settings(BaseSettings):
     langsmith_tracing: bool = False
     langsmith_api_key: SecretStr = SecretStr("")
     langsmith_project: str = "wa-shopify-bot-dev"
+
+    @property
+    def stt_allowed_language_set(self) -> frozenset[str]:
+        return frozenset(
+            code.strip().lower() for code in self.stt_allowed_languages.split(",") if code.strip()
+        )
 
     @model_validator(mode="after")
     def _phase11_values_are_valid(self) -> "Settings":

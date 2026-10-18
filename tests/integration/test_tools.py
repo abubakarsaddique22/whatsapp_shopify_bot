@@ -295,12 +295,93 @@ async def test_image_of_hidden_product_is_not_found(session):
 # ---- picking the variant for price and stock (no Shopify call happens in any of these)
 
 
-async def test_several_variants_means_ask_the_customer(session, no_shopify):
-    for tool in (tools.tool_get_price, tools.tool_check_stock):
-        result = await tool(session, REEF_ID)
-        assert result.ok
-        assert result.data["match"] == "ambiguous"
-        assert {v["variant_id"] for v in result.data["variants"]} == {BLACK_40, BLUE_44}
+async def test_several_variants_in_different_stock_states_ask_the_customer(session, monkeypatch):
+    live = reef_live()
+    live[BLUE_44] = live[BLUE_44].model_copy(update={"stock": StockState.OUT_OF_STOCK})
+    live_variants(monkeypatch, live)
+    result = await tools.tool_check_stock(session, REEF_ID)
+    assert result.ok
+    assert result.data["match"] == "ambiguous"
+    assert {v["variant_id"] for v in result.data["variants"]} == {BLACK_40, BLUE_44}
+
+
+async def test_several_variants_in_the_same_stock_state_are_answered(session, monkeypatch):
+    live_variants(monkeypatch, reef_live())
+    result = await tools.tool_check_stock(session, REEF_ID)
+    assert result.ok
+    assert result.data["match"] == "one"
+    assert result.data["same_stock_all_variants"] is True
+    assert result.data["variant_title"] is None
+    assert result.data["stock"]["state"] == StockState.IN_STOCK.value
+
+
+async def test_stock_check_failing_for_one_of_several_variants_means_ask(session, monkeypatch):
+    live = reef_live()
+    live[BLUE_44] = ShopifyUnavailable("simulated outage")
+    live_variants(monkeypatch, live)
+    result = await tools.tool_check_stock(session, REEF_ID)
+    assert result.data["match"] == "ambiguous"
+
+
+def live_variants(monkeypatch, variants, calls=None):
+    """Answer fetch_live_variant from `variants` (id -> Variant or None) and record the ids."""
+
+    async def fake(variant_id, **kwargs):
+        if calls is not None:
+            calls.append(variant_id)
+        found = variants[variant_id]
+        if isinstance(found, Exception):
+            raise found
+        return found
+
+    monkeypatch.setattr(stock_mod, "fetch_live_variant", fake)
+
+
+def reef_live(price_blue: str = "9000") -> dict:
+    black, blue = REEF.variants
+    blue = blue.model_copy(update={"price": Money(amount=Decimal(price_blue), currency="PKR")})
+    return {BLACK_40: black, BLUE_44: blue}
+
+
+async def test_several_variants_with_one_live_price_are_answered_without_a_question(
+    session, monkeypatch
+):
+    calls: list[str] = []
+    live_variants(monkeypatch, reef_live(), calls)
+    result = await tools.tool_get_price(session, REEF_ID)
+    assert result.ok
+    assert result.data["match"] == "one"
+    assert result.data["same_price_all_variants"] is True
+    assert result.data["variant_count"] == 2
+    assert result.data["variant_title"] is None  # no colour is named: the price holds for all
+    assert result.data["price"]["amount"] == "9000.00"
+    assert sorted(calls) == sorted([BLACK_40, BLUE_44])  # every variant was read live
+
+
+async def test_several_variants_with_different_live_prices_still_ask(session, monkeypatch):
+    live_variants(monkeypatch, reef_live(price_blue="9500"))
+    result = await tools.tool_get_price(session, REEF_ID)
+    assert result.data["match"] == "ambiguous"
+    assert "price" not in result.data
+
+
+async def test_a_variant_that_is_missing_live_means_ask(session, monkeypatch):
+    live = reef_live()
+    live[BLUE_44] = None
+    live_variants(monkeypatch, live)
+    result = await tools.tool_get_price(session, REEF_ID)
+    assert result.data["match"] == "ambiguous"
+
+
+async def test_shopify_failing_during_the_same_price_check_means_ask_not_error(
+    session, monkeypatch
+):
+    live = reef_live()
+    live[BLUE_44] = ShopifyUnavailable("simulated outage")
+    live_variants(monkeypatch, live)
+    result = await tools.tool_get_price(session, REEF_ID)
+    assert result.ok
+    assert result.data["match"] == "ambiguous"
 
 
 async def test_colour_the_model_does_not_come_in_is_not_out_of_stock(session, no_shopify):

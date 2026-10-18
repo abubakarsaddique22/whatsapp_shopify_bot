@@ -23,6 +23,7 @@ What happens to errors:
 A doubtful transcript is dropped on purpose: the outcome has no text, so nothing can answer it.
 """
 
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
@@ -31,7 +32,15 @@ from pathlib import Path
 from app.core.errors import AudioConversionError, MediaTooLarge
 from app.integrations.speech.base import SpeechToTextProvider, TranscriptionResult
 from app.voice.convert import PreparedAudio, prepared_audio
-from app.voice.gate import GateReason, check_audio_limits, check_transcript
+from app.voice.gate import (
+    ALLOWED_LANGUAGES,
+    GateReason,
+    check_audio_limits,
+    check_transcript,
+    words_of,
+)
+
+log = logging.getLogger(__name__)
 
 Prepare = Callable[..., AbstractAsyncContextManager[PreparedAudio]]
 
@@ -71,6 +80,7 @@ async def transcribe_voice_note(
     min_words: int,
     min_confidence: float,
     language_hint: str | None = None,
+    allowed_languages: frozenset[str] = ALLOWED_LANGUAGES,
     prepare: Prepare = prepared_audio,  # tests pass a fake, so no network and no ffmpeg
 ) -> VoiceOutcome:
     duration_s = 0.0
@@ -92,7 +102,21 @@ async def transcribe_voice_note(
         # many providers do not report the length; the WAV length we measured is the truth
         result = result.model_copy(update={"duration_s": duration_s})
 
-    decision = check_transcript(result, min_words=min_words, min_confidence=min_confidence)
+    decision = check_transcript(
+        result,
+        min_words=min_words,
+        min_confidence=min_confidence,
+        allowed_languages=allowed_languages,
+    )
     if not decision.ok:
+        # why was it dropped? No transcript text here (privacy): only numbers and the language.
+        log.info(
+            "voice_gate_stopped reason=%s language=%s words=%d duration_s=%.1f confidence=%s",
+            decision.reason,
+            result.language,
+            len(words_of(result.text)),
+            result.duration_s,
+            result.confidence,
+        )
         return VoiceOutcome(reason=decision.reason)
     return VoiceOutcome(transcript=result)

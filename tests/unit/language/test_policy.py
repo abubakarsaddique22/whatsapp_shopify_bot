@@ -58,8 +58,10 @@ def test_unknown_message_changes_nothing(current):
     assert next_language(current, Lang.EN, Lang.UNKNOWN) == current
 
 
-def test_one_message_in_another_language_is_ignored():
-    assert next_language(Lang.EN, Lang.EN, Lang.ROMAN_UR) == Lang.EN
+def test_one_message_in_another_language_switches_at_once():
+    # owner decision 2026-10-18: every message has its own language (SWITCH_AFTER = 1)
+    assert next_language(Lang.EN, Lang.EN, Lang.ROMAN_UR) == Lang.ROMAN_UR
+    assert next_language(Lang.ROMAN_UR, Lang.ROMAN_UR, Lang.EN) == Lang.EN
 
 
 def test_two_messages_in_a_row_switch_the_language():
@@ -68,16 +70,16 @@ def test_two_messages_in_a_row_switch_the_language():
     assert next_language(Lang.EN, Lang.MIXED, Lang.MIXED) == Lang.MIXED
 
 
-def test_two_different_new_languages_do_not_switch():
-    assert next_language(Lang.EN, Lang.ROMAN_UR, Lang.UR) == Lang.EN
+def test_the_newest_clear_language_wins():
+    assert next_language(Lang.EN, Lang.ROMAN_UR, Lang.UR) == Lang.UR
 
 
-def test_unknown_message_in_between_breaks_the_run():
-    assert next_language(Lang.EN, Lang.UNKNOWN, Lang.ROMAN_UR) == Lang.EN
+def test_unknown_message_in_between_does_not_stop_a_switch():
+    assert next_language(Lang.EN, Lang.UNKNOWN, Lang.ROMAN_UR) == Lang.ROMAN_UR
 
 
-def test_no_previous_message_does_not_switch():
-    assert next_language(Lang.EN, None, Lang.ROMAN_UR) == Lang.EN
+def test_no_previous_message_still_switches():
+    assert next_language(Lang.EN, None, Lang.ROMAN_UR) == Lang.ROMAN_UR
 
 
 @pytest.mark.parametrize("detected", [Lang.ROMAN_UR, Lang.EN, Lang.UNKNOWN])
@@ -94,10 +96,10 @@ def test_explicit_request_wins_at_once(detected):
     [
         (Lang.EN, "en"),
         (Lang.ROMAN_UR, "roman_ur"),
-        (Lang.MIXED, "mixed"),
+        (Lang.MIXED, "roman_ur"),  # English and Roman Urdu mixed -> Roman Urdu (owner, 2026-10-18)
         (Lang.UR, "roman_ur"),  # Urdu script text -> Roman Urdu (A4)
         (Lang.PA, "roman_ur"),  # Punjabi -> simple Roman Urdu (A4)
-        (Lang.UNKNOWN, "en_roman_ur"),  # do not guess: short English plus Roman Urdu
+        (Lang.UNKNOWN, "roman_ur"),  # not English -> Roman Urdu (owner, 2026-10-18)
     ],
 )
 def test_reply_language_table(language, expected):
@@ -112,8 +114,10 @@ def test_urdu_script_replies_setting_only_changes_urdu():
 
 
 @pytest.mark.parametrize("language", list(Lang))
-def test_low_confidence_always_asks_in_both_languages(language):
-    assert reply_language(language, low_confidence=True) == "en_roman_ur"
+def test_low_confidence_follows_the_same_rule(language):
+    # English stays English, every other language gets Roman Urdu
+    expected = "en" if language == Lang.EN else "roman_ur"
+    assert reply_language(language, low_confidence=True) == expected
 
 
 # ---- reply_matches: output check -------------------------------------------------------
@@ -180,16 +184,17 @@ def run(messages):
     return replies
 
 
-def test_conversation_switches_after_two_roman_urdu_messages():
+def test_conversation_follows_the_language_of_each_message():
     replies = run(
         [
             "do you have this watch in black",
-            "ap ka pass black color hai?",  # one stray message: still English
-            "mujhe is watch ki picture bhejo",  # second in a row: switch
+            "ap ka pass black color hai?",  # Roman Urdu: Roman Urdu reply at once
+            "mujhe is watch ki picture bhejo",
             "pic",  # no evidence: stays Roman Urdu
+            "how much is it",  # English again: English reply at once
         ]
     )
-    assert replies == ["en", "en", "roman_ur", "roman_ur"]
+    assert replies == ["en", "roman_ur", "roman_ur", "roman_ur", "en"]
 
 
 def test_customer_asks_for_english():
@@ -197,5 +202,5 @@ def test_customer_asks_for_english():
 
 
 @pytest.mark.parametrize("first_message", ["hello", HINDI])
-def test_unknown_first_message_gets_the_bilingual_line(first_message):
-    assert run([first_message]) == ["en_roman_ur"]
+def test_unknown_first_message_gets_roman_urdu(first_message):
+    assert run([first_message]) == ["roman_ur"]

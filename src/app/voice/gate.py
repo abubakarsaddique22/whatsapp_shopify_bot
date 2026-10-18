@@ -39,7 +39,13 @@ MAX_PHRASE_WORDS = 4  # longest repeated phrase we look for
 MAX_WORDS_PER_SECOND = 6.5  # faster than any speaker: the clip cannot hold this many words
 SPEED_CHECK_MIN_WORDS = 5
 
-_LANGUAGE_NAMES = {"english": "en", "urdu": "ur", "punjabi": "pa", "panjabi": "pa"}
+_LANGUAGE_NAMES = {
+    "english": "en",
+    "urdu": "ur",
+    "punjabi": "pa",
+    "panjabi": "pa",
+    "hindi": "hi",
+}
 _WORD = re.compile(r"[\w']+")  # \w covers Latin and Arabic-script letters
 
 

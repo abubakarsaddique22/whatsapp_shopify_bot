@@ -19,6 +19,7 @@ above max_seconds, so the gate can refuse it without converting a ten-minute fil
 """
 
 import asyncio
+import subprocess
 import tempfile
 import uuid
 import wave
@@ -89,27 +90,32 @@ async def convert_to_wav(
         "pcm_s16le",
         str(target),
     ]
+    # subprocess.run in a thread, NOT asyncio.create_subprocess_exec: the worker runs on the
+    # selector event loop on Windows (needed by the LangGraph Postgres checkpointer), and that loop
+    # does not support subprocesses (NotImplementedError). A thread works on every loop.
+    # On a timeout, subprocess.run kills the ffmpeg process itself.
     try:
-        process = await asyncio.create_subprocess_exec(
-            *command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+        result = await asyncio.to_thread(
+            subprocess.run,
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
         )
     except FileNotFoundError:
         raise ConfigError(
             "ffmpeg was not found. Install it (winget install Gyan.FFmpeg) and restart the shell"
         ) from None
-
-    try:
-        _, stderr = await asyncio.wait_for(process.communicate(), timeout)
-    except TimeoutError:
-        process.kill()
-        await process.wait()
+    except subprocess.TimeoutExpired:
         raise AudioConversionError("ffmpeg took too long") from None
 
-    if process.returncode != 0 or not target.exists():
-        tail = stderr.decode("utf-8", errors="replace").strip()[-300:]
+    if result.returncode != 0 or not target.exists():
+        tail = result.stderr.decode("utf-8", errors="replace").strip()[-300:]
         raise AudioConversionError(
             "ffmpeg could not convert the audio",
-            detail={"returncode": process.returncode, "stderr_tail": tail},
+            detail={"returncode": result.returncode, "stderr_tail": tail},
         )
     return WavFile(path=target, duration_s=wav_duration(target))
 

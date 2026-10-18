@@ -281,6 +281,8 @@ def _chat_debug(state: GraphState) -> str:
     ]
     if state.get("handoff_reason"):
         lines.append(f"  handoff_reason={state.get('handoff_reason')}")
+    if router:  # exactly what the router understood: product words, colour, price limit
+        lines.append(f"  router={router.model_dump(mode='json', exclude_none=True)}")
     for result in state.get("tool_results", []):  # what the product search really found
         if result.tool == "search_products" and isinstance(result.data, dict):
             found = [c.get("title") for c in result.data.get("candidates", [])]

@@ -1,6 +1,6 @@
 """Phase 5, step 6: the language step on the real Postgres, with a FakeLLM (no network).
 
-Checks that the sticky language is saved and read back, that two messages in a row switch it,
+Checks that the language is saved and read back, that every message gets its own language,
 and that the worker's debug reply (DEBUG_REPLY=true) shows what the router understood.
 Each test runs inside a transaction that is rolled back, so your real rows stay as they are.
 Needs: docker compose up -d db, and uv run alembic upgrade head.
@@ -98,20 +98,24 @@ async def test_first_message_sets_the_language_and_reply_language(session: Async
     assert result.reply_language == "en"
 
 
-async def test_one_stray_message_does_not_switch_but_two_in_a_row_do(
+async def test_every_message_gets_the_language_it_is_written_in(
     session: AsyncSession,
 ) -> None:
+    # owner decision 2026-10-18 (SWITCH_AFTER = 1): no second message is needed to switch
     cid = await new_conversation(session)
-    llm = FakeLLM([answer("en"), answer("roman_ur"), answer("roman_ur")])
+    llm = FakeLLM([answer("en"), answer("roman_ur"), answer("roman_ur"), answer("en")])
 
     first = await run_language_step(session, cid, "How much is it?", llm)
     second = await run_language_step(session, cid, "iski price kya hai", llm)
     third = await run_language_step(session, cid, "aur colour kon sa hai", llm)
+    fourth = await run_language_step(session, cid, "What is your return policy?", llm)
 
     assert first.conversation_language == Lang.EN
-    assert second.conversation_language == Lang.EN  # one message is not enough
-    assert third.conversation_language == Lang.ROMAN_UR  # the second one in a row switches
-    assert third.reply_language == "roman_ur"
+    assert second.conversation_language == Lang.ROMAN_UR  # switches at once
+    assert second.reply_language == "roman_ur"
+    assert third.conversation_language == Lang.ROMAN_UR
+    assert fourth.conversation_language == Lang.EN  # and back at once
+    assert fourth.reply_language == "en"
 
 
 async def test_explicit_request_switches_at_once(session: AsyncSession) -> None:
@@ -128,7 +132,7 @@ async def test_router_failure_keeps_the_conversation_working(session: AsyncSessi
     cid = await new_conversation(session)
     result = await run_language_step(session, cid, "???", FakeLLM(["nope", "still nope"]))
     assert result.router.intent == Intent.UNCLEAR
-    assert result.reply_language == "en_roman_ur"
+    assert result.reply_language == "roman_ur"  # not English -> Roman Urdu (owner, 2026-10-18)
 
 
 # ---- worker debug reply
@@ -185,4 +189,4 @@ async def test_worker_without_the_switch_uses_the_graph(
 
     bodies = (await session.execute(select(WhatsAppOutbox.body))).scalars().all()
     # the empty FakeLLM router answers 'unclear': the graph asks a clarifying question
-    assert list(bodies) == [render("ask_detail", "en_roman_ur")]
+    assert list(bodies) == [render("ask_detail", "roman_ur")]

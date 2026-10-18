@@ -18,9 +18,10 @@ shipping, privacy, FAQ, pages). It returns passages with source ids, or an abste
 nothing is relevant enough. It reads only kb_documents and kb_chunks, never Shopify.
 """
 
+import asyncio
 import re
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -31,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog import stock as stock_mod
 from app.catalog.images import get_images
-from app.catalog.normalizer import colour_of_value, colours_of
+from app.catalog.normalizer import canonical_option_name, colour_of_value, colours_of
 from app.catalog.price import price_info
 from app.catalog.search import (
     VariantRow,
@@ -43,7 +44,7 @@ from app.catalog.specs import get_specs
 from app.core.errors import EmbeddingError, ShopifyError, ValidationFailed
 from app.core.settings import get_settings
 from app.db import repositories as repo
-from app.domain.catalog import StockState
+from app.domain.catalog import StockState, Variant
 from app.domain.models import ToolResult
 from app.integrations.embeddings.base import Embedder
 from app.integrations.embeddings.factory import get_embedder
@@ -197,6 +198,7 @@ async def _resolve(
                 "match": "ambiguous",
                 "product_id": product_id,
                 "title": basics.title,
+                "total": len(matching),  # more than the listed variants: 'same price' unproven
                 "variants": [
                     {"variant_id": r.id, "title": r.title}
                     for r in matching[:MAX_AMBIGUOUS_VARIANTS]
@@ -277,6 +279,50 @@ async def tool_search_products(
 # ---- tool 2: get_price (live)
 
 
+async def _all_variants_live(reply: dict[str, Any], pid: str) -> list[Variant] | None:
+    """Live copies of EVERY variant behind an 'ambiguous' reply, or None when that is not possible.
+
+    None for: not an ambiguous reply, more variants than listed (cannot prove 'all'), a Shopify
+    error, or a variant that is missing or belongs to another product. The caller then asks.
+    """
+    variants = reply.get("variants") or []
+    if reply.get("match") != "ambiguous" or reply.get("total") != len(variants) or not variants:
+        return None
+    try:
+        lives = await asyncio.gather(
+            *(stock_mod.fetch_live_variant(v["variant_id"]) for v in variants)
+        )
+    except ShopifyError:
+        return None
+    if any(v is None or v.product_id != pid for v in lives):
+        return None
+    return [v for v in lives if v is not None]
+
+
+async def _same_price_for_all(reply: dict[str, Any], pid: str) -> dict[str, Any] | None:
+    """Several variants fit, but do they all cost the same RIGHT NOW? Then there is no question.
+
+    'How much is the Hublot Square Bang?' with Gold & Black / Gold & Blue at one price needs no
+    'which colour?'. Every variant is read live (never the mirror); one differing price or any
+    problem reading them: None, and the bot asks.
+    """
+    found = await _all_variants_live(reply, pid)
+    if found is None or len({(v.price, v.compare_at_price) for v in found}) != 1:
+        return None
+    first = found[0]
+    return {
+        "match": "one",
+        "product_id": pid,
+        "title": reply.get("title", ""),
+        "variant_id": first.id,
+        "variant_title": None,  # the price holds for every variant: no colour is named
+        "colour_unverified": False,
+        "same_price_all_variants": True,
+        "variant_count": len(found),
+        "price": price_info(first.price, first.compare_at_price).model_dump(mode="json"),
+    }
+
+
 async def tool_get_price(
     session: AsyncSession,
     product_id: str,
@@ -295,7 +341,8 @@ async def tool_get_price(
         if res.error_code:
             return _result(TOOL_PRICE, ok=False, error_code=res.error_code)
         if res.reply is not None:
-            return _result(TOOL_PRICE, data=res.reply)
+            same = await _same_price_for_all(res.reply, pid)
+            return _result(TOOL_PRICE, data=same or res.reply)
         assert res.variant is not None
         live = await stock_mod.fetch_live_variant(res.variant.id)  # ShopifyError -> _guard
         if live is None or live.product_id != pid:
@@ -308,6 +355,33 @@ async def tool_get_price(
 
 
 # ---- tool 3: check_stock (live)
+
+
+async def _same_stock_for_all(reply: dict[str, Any], pid: str) -> dict[str, Any] | None:
+    """Several variants fit and ALL are in the same stock state right now: answer, do not ask.
+
+    'Is the Ladies Watch in stock?' with seven colours, every one available, needs no 'which
+    colour?'. One variant in another state, or any problem reading them: None, and the bot asks.
+    An exact count is shown only when every variant has the same count.
+    """
+    found = await _all_variants_live(reply, pid)
+    if found is None or len({v.stock for v in found}) != 1:
+        return None
+    first = found[0]
+    info = stock_mod.stock_info(first, show_exact=get_settings().show_exact_stock)
+    if len({v.inventory_quantity for v in found}) != 1:
+        info = info.model_copy(update={"quantity": None})
+    return {
+        "match": "one",
+        "product_id": pid,
+        "title": reply.get("title", ""),
+        "variant_id": first.id,
+        "variant_title": None,  # the state holds for every variant: no colour is named
+        "colour_unverified": False,
+        "same_stock_all_variants": True,
+        "variant_count": len(found),
+        "stock": info.model_dump(mode="json"),
+    }
 
 
 async def tool_check_stock(
@@ -328,7 +402,8 @@ async def tool_check_stock(
         if res.error_code:
             return _result(TOOL_STOCK, ok=False, error_code=res.error_code)
         if res.reply is not None:
-            return _result(TOOL_STOCK, data=res.reply)
+            same = await _same_stock_for_all(res.reply, pid)
+            return _result(TOOL_STOCK, data=same or res.reply)
         assert res.variant is not None
         try:
             live = await stock_mod.fetch_live_variant(res.variant.id)
@@ -350,6 +425,23 @@ async def tool_check_stock(
 
 
 # ---- tool 4: get_colors_sizes (mirror)
+
+
+def _colour_names(option_sets: Iterable[dict[str, str]]) -> list[str]:
+    """The merchant's own colour values as written ('Orange-Black'), each once, in store order.
+
+    `colours` holds one short colour per variant ('black'), which loses 'Orange' and 'Rose Gold'
+    of compound values. The customer should hear the names the shop uses.
+    """
+    names: list[str] = []
+    seen: set[str] = set()
+    for options in option_sets:
+        for name, value in options.items():
+            text = str(value).strip()
+            if canonical_option_name(name) == "colour" and text and text.lower() not in seen:
+                seen.add(text.lower())
+                names.append(text)
+    return names
 
 
 async def tool_get_colors_sizes(session: AsyncSession, product_id: str) -> ToolResult:
@@ -381,6 +473,7 @@ async def tool_get_colors_sizes(session: AsyncSession, product_id: str) -> ToolR
                 "product_id": pid,
                 "title": basics.title,
                 "colours": colours_all,
+                "colour_names": _colour_names(row.options or {} for row in rows),
                 "sizes_mm": sizes_all,
                 "colours_listed": bool(colours_all),  # False: the data does not say the colours
                 "variants": variants[:MAX_OPTION_VARIANTS],
