@@ -173,6 +173,7 @@ class Bot:
         self.monkeypatch = monkeypatch
         self.calls: list[tuple[str, dict[str, Any]]] = []  # (tool, kwargs) of every tool call
         self.saved: list[ConversationState] = []  # what the finish node saved, one per turn
+        self.events: list[tuple[str, dict[str, Any]]] = []  # security events (the strikes)
         self.llm = FakeLLM([])
         self.state: GraphState = GraphState()
 
@@ -240,7 +241,11 @@ def bot(monkeypatch: pytest.MonkeyPatch) -> Bot:
     async def fake_basics(session: Any, product_id: str):
         return SimpleNamespace(title="Qorvex Reef")
 
+    async def fake_event(session: Any, kind: str, **kwargs: Any) -> None:
+        harness.events.append((kind, kwargs))  # Phase 11: the injection strike
+
     monkeypatch.setattr(repo, "save_state", fake_save)
+    monkeypatch.setattr(repo, "add_security_event", fake_event)
     monkeypatch.setattr(repo, "product_basics", fake_basics)
     monkeypatch.setattr(nodes, "get_settings", lambda: SETTINGS)
     monkeypatch.setattr(graph_mod, "get_settings", lambda: SETTINGS)

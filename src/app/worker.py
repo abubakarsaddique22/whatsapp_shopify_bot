@@ -11,8 +11,10 @@ A crash in the middle rolls the transaction back, so the row stays 'pending' and
 import asyncio
 import logging
 from contextlib import AsyncExitStack
+from datetime import UTC
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agent.graph import (
@@ -26,6 +28,7 @@ from app.agent.image_flow import Reply, run_image_flow
 from app.agent.language_step import format_debug_reply, run_language_step
 from app.agent.nodes import Deps
 from app.agent.state import Source
+from app.agent.templates import render
 from app.core.errors import AppError, UnsupportedMedia
 from app.core.ids import correlation_id_var, new_correlation_id
 from app.core.logging import setup_logging
@@ -34,13 +37,17 @@ from app.core.tracing import configure_tracing
 from app.db import repositories as repo
 from app.db.session import get_engine, get_sessionmaker
 from app.db.tables import WhatsAppInbox
-from app.domain.models import Intent
+from app.domain.models import ConversationState, Intent
+from app.handoff.notifier import notify_owner, notify_pending
+from app.handoff.service import after_hours_note, create_handoff, is_paused, resume_if_expired
 from app.integrations.embeddings.factory import warm_up
 from app.integrations.llm.base import ChatModel
 from app.integrations.llm.chat_factory import get_chat_model
 from app.integrations.speech.factory import get_stt_provider
 from app.integrations.whatsapp.sender import send_one
-from app.language.policy import reply_language
+from app.language.policy import ReplyLang, reply_language
+from app.security.rate_limit import budget_check, check_sender
+from app.security.redaction import CARD_PLACEHOLDER, redact_cards
 from app.voice.convert import prepared_audio
 from app.voice.gate import clarification_message
 from app.voice.pipeline import VoiceOutcome, dev_prepared_audio, transcribe_voice_note
@@ -196,29 +203,49 @@ async def handle_voice(
         language = reply_language(state.language, urdu_script_replies=settings.urdu_script_replies)
         return "[voice: unclear]", [Reply(clarification_message(outcome.reason, language))]
 
+    if redact_cards(transcript.text) != transcript.text:
+        # a card number was SAID in the voice note: it never goes to the model (Phase 11)
+        state = await repo.load_state(session, inbox.conversation_id)
+        language = reply_language(state.language, urdu_script_replies=settings.urdu_script_replies)
+        return redact_cards(transcript.text), [Reply(render("card_warning", language))]
+
     return transcript.text, await reply_to_text(
         session, inbox.conversation_id, transcript.text, settings, source="voice"
     )
 
 
-async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> None:
-    """Do the work for one claimed inbound message. The caller commits."""
-    settings = get_settings()
-    if settings.kill_switch:
-        await repo.finish_inbox(session, inbox.id, "ignored")
-        log.warning("kill_switch_on", extra={"inbox_id": inbox.id})
-        return
+# ---- Phase 11: what happens around the graph (Blueprint 8.6, 9.6)
 
-    if inbox.msg_type == "audio" and inbox.media_id:
-        kept, replies = await handle_voice(session, inbox, inbox.media_id, settings)
-    else:
-        kept = inbox.text or f"[{inbox.msg_type}]"
-        if inbox.msg_type == "text" and inbox.text:
-            replies = await reply_to_text(session, inbox.conversation_id, inbox.text, settings)
-        else:  # image, sticker, empty text, audio without a media id: the polite reply
-            replies = [Reply(UNSUPPORTED_REPLY)]
 
-    await repo.add_message(session, inbox.conversation_id, "in", kept, inbox.wamid)
+class TurnOutcome(BaseModel):
+    """What one message leaves for AFTER the commit.
+
+    Mail and Slack are slow. They must never run inside the transaction that holds the customer's
+    row, and never delay the customer's reply (see handoff/notifier.py).
+    """
+
+    alerts: list[tuple[str, str]] = Field(default_factory=list)  # (subject, body) for the owner
+    new_handoff: bool = False  # a new handoff row was written: staff must be told
+
+
+_background: set[asyncio.Task[None]] = set()  # keeps a reference, or Python may drop the task
+
+
+def budget_alert(kind: str) -> tuple[str, str]:
+    """(subject, body) for the owner. No customer data in it."""
+    if kind == "budget_reached":
+        return (
+            "[Bot] Daily budget reached: handoff-only mode",
+            "The estimated cost of the last 24 hours reached DAILY_COST_BUDGET. Until it drops "
+            "again, the bot passes every customer to a person and makes no model calls.",
+        )
+    return (
+        "[Bot] Daily budget at 80 %",
+        "The estimated cost of the last 24 hours is at 80 % of DAILY_COST_BUDGET.",
+    )
+
+
+async def queue_replies(session: AsyncSession, inbox: WhatsAppInbox, replies: list[Reply]) -> None:
     for seq, reply in enumerate(replies):
         await repo.add_outbox(
             session,
@@ -230,27 +257,201 @@ async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> None:
             media_url=reply.media_url,
             caption=reply.caption,
         )
+
+
+async def finish_without_model(
+    session: AsyncSession, inbox: WhatsAppInbox, replies: list[Reply], *, keep: str | None = None
+) -> None:
+    """End a message that never reached the graph.
+
+    It is 'ignored': it cost nothing, so the budget does not count it (repo.paid_message_counts).
+    `keep` is the text for the transcript, so staff can read it later. Card numbers are masked
+    again by repo.add_message.
+    """
+    if keep is not None:
+        await repo.add_message(session, inbox.conversation_id, "in", keep, inbox.wamid)
+    await queue_replies(session, inbox, replies)
+    await repo.finish_inbox(session, inbox.id, "ignored")
+
+
+async def handoff_only(
+    session: AsyncSession,
+    inbox: WhatsAppInbox,
+    conv: ConversationState,
+    lang: ReplyLang,
+    settings: Settings,
+    outcome: TurnOutcome,
+) -> None:
+    """The daily budget is used up (Blueprint 9.6): no model call, a person takes over.
+
+    One open handoff per customer (create_handoff is idempotent), so staff get one ticket and not
+    one per message. The customer hears it ONCE per day, after that the bot stays silent.
+    """
+    record = await create_handoff(session, inbox.conversation_id, conv, "budget_reached")
+    outcome.new_handoff = record.created
+    day = (await repo.db_now(session)).astimezone(UTC).date().isoformat()
+    first = await repo.add_security_event_once(
+        session, "budget_notice", ref=str(inbox.conversation_id), detail={"day": day}
+    )
+    notice: list[Reply] = []
+    if first:
+        notice.append(Reply(render("handoff_created", lang)))
+        note = after_hours_note(lang, settings)
+        if note:
+            notice.append(Reply(note))
+    await finish_without_model(session, inbox, notice, keep=inbox.text or f"[{inbox.msg_type}]")
+
+
+async def after_turn(
+    session: AsyncSession,
+    inbox: WhatsAppInbox,
+    before: ConversationState,
+    settings: Settings,
+    replies: list[Reply],
+    outcome: TurnOutcome,
+) -> list[Reply]:
+    """A turn that ended in a handoff: write the record, and say when the team is back if closed.
+
+    The graph's handoff_node sets needs_handoff and the pause. A flag that was not set before this
+    turn means a NEW handoff. The pause itself is read at the top of handle_inbox.
+    """
+    after = await repo.load_state(session, inbox.conversation_id)
+    if not after.needs_handoff or before.needs_handoff:
+        return replies
+    record = await create_handoff(
+        session, inbox.conversation_id, after, after.handoff_reason or "unknown"
+    )
+    outcome.new_handoff = record.created
+    lang = reply_language(after.language, urdu_script_replies=settings.urdu_script_replies)
+    note = after_hours_note(lang, settings)
+    return [*replies, Reply(note)] if note else replies
+
+
+async def announce(sessionmaker: async_sessionmaker[AsyncSession], outcome: TurnOutcome) -> None:
+    """After the commit: tell the owner (alerts) and staff (new handoff). Never raises.
+
+    A handoff that nobody could be told about stays open with notify_error set, and the next
+    notify_pending (next handoff, or `python -m app.handoff.notifier`) tries it again.
+    """
+    for subject, body in outcome.alerts:
+        await notify_owner(subject, body)
+    if outcome.new_handoff:
+        try:
+            async with sessionmaker() as session:
+                await notify_pending(session)
+                await session.commit()
+        except Exception:
+            log.exception("handoff_notify_error")
+
+
+def announce_later(sessionmaker: async_sessionmaker[AsyncSession], outcome: TurnOutcome) -> None:
+    """Run announce() in the background: the customer's reply is not held back by a slow mail."""
+    if not outcome.alerts and not outcome.new_handoff:
+        return
+    task = asyncio.create_task(announce(sessionmaker, outcome))
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
+async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> TurnOutcome:
+    """Do the work for one claimed inbound message. The caller commits.
+
+    Order, cheap and safe first: kill switch, rate limit, pause, daily budget, card numbers, and
+    only then the graph. A message stopped before the graph costs nothing and ends 'ignored'.
+    """
+    settings = get_settings()
+    outcome = TurnOutcome()
+    if settings.kill_switch or await repo.get_flag(session, repo.KILL_SWITCH_FLAG):
+        await repo.finish_inbox(session, inbox.id, "ignored")
+        log.warning("kill_switch_on", extra={"inbox_id": inbox.id})
+        return outcome
+
+    conv = await repo.load_state(session, inbox.conversation_id)
+    lang = reply_language(conv.language, urdu_script_replies=settings.urdu_script_replies)
+    shown = inbox.text or f"[{inbox.msg_type}]"
+
+    # 1. rate limit: ONE polite message, then silence (security/rate_limit.py)
+    decision = await check_sender(session, inbox.conversation_id, inbox.wa_id_hash, settings)
+    if decision.action != "allow":
+        limit_notice: list[Reply] = []
+        if decision.action == "notify":
+            kind = "cooldown" if decision.reason == "strikes" else "rate_limited"
+            limit_notice.append(Reply(render(kind, lang)))
+        log.warning(
+            "sender_limited",
+            extra={
+                "inbox_id": inbox.id,
+                "limit_reason": decision.reason,
+                "limit_action": decision.action,
+            },
+        )
+        await finish_without_model(session, inbox, limit_notice)
+        return outcome
+
+    # 2. pause: the timer may have ended it; while it runs, ONE acknowledgement, then silence
+    if await resume_if_expired(session, inbox.conversation_id, conv):
+        log.info("pause_expired", extra={"inbox_id": inbox.id})
+    if is_paused(conv):
+        pause_notice: list[Reply] = []
+        if conv.pause_acked_for != conv.bot_paused_until:
+            conv.pause_acked_for = conv.bot_paused_until
+            await repo.save_state(session, inbox.conversation_id, conv)
+            pause_notice.append(Reply(render("paused_ack", lang)))
+        await finish_without_model(session, inbox, pause_notice, keep=shown)
+        return outcome
+
+    # 3. daily budget: an alarm at 80 % (owner is told once), handoff-only at 100 %
+    status, raised = await budget_check(session, settings)
+    if raised is not None:
+        outcome.alerts.append(budget_alert(raised))
+    if status == "exhausted":
+        await handoff_only(session, inbox, conv, lang, settings, outcome)
+        return outcome
+
+    # 4. a card number was typed: it is already masked in inbox.text; warn, no model call
+    if inbox.msg_type == "text" and inbox.text and CARD_PLACEHOLDER in inbox.text:
+        card_notice = [Reply(render("card_warning", lang))]
+        await finish_without_model(session, inbox, card_notice, keep=inbox.text)
+        return outcome
+
+    if inbox.msg_type == "audio" and inbox.media_id:
+        kept, replies = await handle_voice(session, inbox, inbox.media_id, settings)
+    else:
+        kept = inbox.text or f"[{inbox.msg_type}]"
+        if inbox.msg_type == "text" and inbox.text:
+            replies = await reply_to_text(session, inbox.conversation_id, inbox.text, settings)
+        else:  # image, sticker, empty text, audio without a media id: the polite reply
+            replies = [Reply(UNSUPPORTED_REPLY)]
+
+    replies = await after_turn(session, inbox, conv, settings, replies, outcome)
+    await repo.add_message(session, inbox.conversation_id, "in", kept, inbox.wamid)
+    await queue_replies(session, inbox, replies)
     await repo.finish_inbox(session, inbox.id, "done")
+    return outcome
 
 
 async def process_inbox(sessionmaker: async_sessionmaker[AsyncSession]) -> bool:
     """Process one pending inbound message. Returns False if there was none."""
     correlation_id_var.set(new_correlation_id())  # one id per pass: logs and the trace share it
+    outcome: TurnOutcome | None = None
     async with sessionmaker() as session:
         inbox = await repo.claim_inbox(session)
         if inbox is None:
             return False
         inbox_id = inbox.id
         try:
-            await handle_inbox(session, inbox)
+            outcome = await handle_inbox(session, inbox)
             await session.commit()
         except Exception as exc:
+            outcome = None  # rolled back: there is nothing to announce
             await session.rollback()  # nothing was half-done; also releases the row lock
             error = exc.message if isinstance(exc, AppError) else type(exc).__name__
             log.exception("inbox_failed", extra={"inbox_id": inbox_id})
             await repo.record_inbox_failure(session, inbox_id, error, MAX_ATTEMPTS)
             await session.commit()
-        return True
+    if outcome is not None:
+        announce_later(sessionmaker, outcome)  # after the commit, in the background
+    return True
 
 
 async def send_outbox(sessionmaker: async_sessionmaker[AsyncSession]) -> bool:
@@ -259,6 +460,8 @@ async def send_outbox(sessionmaker: async_sessionmaker[AsyncSession]) -> bool:
         return False  # the kill switch stops replies
     async with sessionmaker() as session:
         try:
+            if await repo.get_flag(session, repo.KILL_SWITCH_FLAG):
+                return False  # the same switch, flipped through the admin API
             did_work = await send_one(session)
             await session.commit()
         except Exception:
@@ -299,6 +502,7 @@ async def main() -> None:
                     await asyncio.sleep(POLL_SECONDS)
     finally:
         set_checkpointer(None)
+        await asyncio.gather(*_background, return_exceptions=True)  # let the last alerts finish
         await get_engine().dispose()
 
 

@@ -15,6 +15,10 @@ handoff_created:
   en: "I have passed your request to our team. They will contact you here soon."
   roman_ur: "Maine aap ki request hamari team ko bhej di hai. Woh jald aap se yahin rabta karein ge."
   en_roman_ur: "I have passed your request to our team. / Request team ko bhej di hai, woh jald rabta karein ge."
+after_hours_note:    # added to a handoff reply while the team is closed. Placeholder: {hours}
+  en: "Our team's hours are {hours}. They will reply as soon as they are back."
+  roman_ur: "Hamari team ke auqaat {hours} hain. Woh wapas aate hi jawab dein ge."
+  en_roman_ur: "Our team's hours are {hours}. / Team ke auqaat {hours} hain, wapas aate hi jawab milega."
 paused_ack:          # during bot_paused_until: ONE short acknowledgement, then silence
   en: "Our team has your request and will reply soon."
   roman_ur: "Hamari team ke paas aap ki request hai, woh jald jawab dein ge."
@@ -27,3 +31,15 @@ shopify_unavailable: # T15
   en: "I cannot check that right now. Please try again in a moment, or I can ask our team to help."
   roman_ur: "Main abhi yeh check nahi kar sakta. Thori dair baad try karein, ya main team se madad ke liye keh sakta hoon."
   en_roman_ur: "I cannot check that right now. / Abhi check nahi ho sakta, thori dair baad try karein."
+rate_limited:        # Phase 11: ONE polite message when a sender is over a limit, then silence
+  en: "You are sending messages very fast. Please wait a little, then write to me again."
+  roman_ur: "Aap bohat tezi se messages bhej rahe hain. Thora intezar karein, phir dobara likhein."
+  en_roman_ur: "You are sending messages very fast. / Bohat tezi se messages aa rahe hain, thora intezar karein."
+cooldown:            # Phase 11: too many strikes in a short time: one notice, then silence
+  en: "I cannot reply for a while. Please try again later, or our team can help you in business hours."
+  roman_ur: "Main kuch dair jawab nahi de sakta. Baad mein dobara likhein, ya business hours mein hamari team madad karegi."
+  en_roman_ur: "I cannot reply for a while. / Kuch dair jawab nahi de sakta, baad mein likhein ya team se rabta karein."
+card_warning:        # Phase 11: the message held a card number (it was masked before it was stored)
+  en: "Please do not share card or payment details in this chat. I cannot use them and a chat is not a safe place. For payment help, our team can assist you."
+  roman_ur: "Meherbani karke card ya payment ki tafseel is chat mein share na karein. Main inhein istemal nahi kar sakta aur chat mehfooz jagah nahi. Payment ke liye hamari team madad karegi."
+  en_roman_ur: "Please do not share card details in this chat. / Card ki tafseel chat mein share na karein, payment ke liye team madad karegi."

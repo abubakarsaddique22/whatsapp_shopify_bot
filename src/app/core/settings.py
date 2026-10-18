@@ -3,10 +3,16 @@
 Secrets use SecretStr so they print as '**********'. Never log .get_secret_value().
 """
 
+import re
 from functools import lru_cache
 
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 'log' only prints the notification: for local development, no email or Slack needed
+HANDOFF_CHANNELS = {"email", "slack", "whatsapp_staff", "log"}
+_BUSINESS_HOURS = re.compile(r"([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d")
+_UTC_OFFSET = re.compile(r"[+-](0\d|1[0-4]):[0-5]\d")
 
 
 class Settings(BaseSettings):
@@ -94,17 +100,80 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = 8
     rate_limit_per_hour: int = 60
     rate_limit_per_day: int = 200
+    # daily LLM + speech spend in your currency (Phase 11): alarm at 80 %, 'handoff only' at 100 %.
+    # 0 = no budget set, the check is off.
+    daily_cost_budget: float = 0.0
+    # What one customer message costs you on average (LLM calls, and for a voice note also the
+    # speech-to-text), in the same currency. The budget check multiplies these by the messages
+    # of the last 24 hours: an estimate, not a bill. 0 = free (local model, free tier).
+    cost_per_text_message: float = 0.0
+    cost_per_voice_message: float = 0.0
+
+    # retention (Phase 11, step 9): how many days data is kept. `python -m app.jobs.retention`
+    # deletes what is older. A customer who wrote nothing for retention_conversation_days is erased
+    # completely, phone number included.
+    retention_conversation_days: int = 180
+    retention_message_days: int = 90  # transcript lines (messages table)
+    retention_queue_days: int = 30  # finished inbox and outbox rows
+    retention_handoff_days: int = 90  # resolved handoffs
+    retention_security_days: int = 365  # security_events (hashes and short facts only)
+    retention_sync_days: int = 14  # finished Shopify sync events (failed ones: 90 days at least)
+    retention_checkpoint_days: int = 7  # LangGraph step history of idle conversations
 
     # handoff
     handoff_channel: str = "email"
     handoff_target: str = ""
     handoff_pause_hours: int = 12
-    business_hours: str = "10:00-20:00"
+    business_hours: str = "10:00-20:00"  # local time, HH:MM-HH:MM
+    # the time zone of business_hours as an offset from UTC (Pakistan has no summer time: +05:00)
+    business_utc_offset: str = "+05:00"
+    # HANDOFF_CHANNEL=email only (handoff/notifier.py): the mail server that sends the notification.
+    # Port 465 = SSL from the start, any other port (587) = STARTTLS. Empty SMTP_FROM = SMTP_USER.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = ""
 
     # observability
     langsmith_tracing: bool = False
     langsmith_api_key: SecretStr = SecretStr("")
     langsmith_project: str = "wa-shopify-bot-dev"
+
+    @model_validator(mode="after")
+    def _phase11_values_are_valid(self) -> "Settings":
+        """Fail fast on a typo in the Phase 11 settings, in every environment."""
+        if self.handoff_channel not in HANDOFF_CHANNELS:
+            raise ValueError(f"HANDOFF_CHANNEL must be one of {sorted(HANDOFF_CHANNELS)}")
+        if not _BUSINESS_HOURS.fullmatch(self.business_hours):
+            raise ValueError("BUSINESS_HOURS must look like 10:00-20:00")
+        if not _UTC_OFFSET.fullmatch(self.business_utc_offset):
+            raise ValueError("BUSINESS_UTC_OFFSET must look like +05:00")
+        if self.daily_cost_budget < 0:
+            raise ValueError("DAILY_COST_BUDGET cannot be negative")
+        if self.cost_per_text_message < 0 or self.cost_per_voice_message < 0:
+            raise ValueError("COST_PER_TEXT_MESSAGE and COST_PER_VOICE_MESSAGE cannot be negative")
+        for name in ("rate_limit_per_minute", "rate_limit_per_hour", "rate_limit_per_day"):
+            if getattr(self, name) < 1:
+                raise ValueError(f"{name.upper()} must be at least 1")
+        if self.handoff_pause_hours < 1:
+            raise ValueError("HANDOFF_PAUSE_HOURS must be at least 1")
+        for name in (
+            "retention_conversation_days",
+            "retention_message_days",
+            "retention_queue_days",
+            "retention_handoff_days",
+            "retention_security_days",
+            "retention_sync_days",
+            "retention_checkpoint_days",
+        ):
+            if getattr(self, name) < 1:
+                raise ValueError(f"{name.upper()} must be at least 1")
+        # admin endpoints can pause the bot for everybody: never open them with a weak key
+        key = self.admin_api_key.get_secret_value()
+        if self.admin_endpoints_enabled and (len(key) < 24 or key.startswith("change-me")):
+            raise ValueError("ADMIN_ENDPOINTS_ENABLED needs an ADMIN_API_KEY of 24+ characters")
+        return self
 
     @model_validator(mode="after")
     def _production_must_be_complete(self) -> "Settings":

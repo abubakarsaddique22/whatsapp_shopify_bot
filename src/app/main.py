@@ -5,7 +5,7 @@ import time
 
 from fastapi import FastAPI, Request
 
-from app.api import dev, health, shopify_webhook, whatsapp_webhook
+from app.api import admin, dev, health, shopify_webhook, whatsapp_webhook
 from app.core.errors import register_error_handlers
 from app.core.ids import correlation_id_var, new_correlation_id
 from app.core.logging import setup_logging
@@ -47,7 +47,8 @@ def create_app() -> FastAPI:
     app.include_router(shopify_webhook.router)
     if settings.app_env == "local":
         app.include_router(dev.router)  # /dev/simulate and /dev/outbox exist only locally
-    # Phase 11: admin
+    if settings.admin_endpoints_enabled:  # Phase 11: off by default; every call needs X-Admin-Key
+        app.include_router(admin.router)
     return app
 
 

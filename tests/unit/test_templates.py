@@ -19,6 +19,10 @@ KINDS = {
     "pictures_sent",
     "picture_colour_missing",
     "ask_which_variant",
+    "after_hours_note",
+    "rate_limited",
+    "cooldown",
+    "card_warning",
 }
 
 

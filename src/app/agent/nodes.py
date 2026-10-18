@@ -526,6 +526,7 @@ async def handoff_node(
     out = state.get("router")
     reason = reason or (out.intent.value if out else "unknown")
     conv.needs_handoff = True
+    conv.handoff_reason = reason
     conv.bot_paused_until = datetime.now(UTC) + timedelta(hours=get_settings().handoff_pause_hours)
     response = _reply(state, kind).model_copy(update={"needs_handoff": True})
     return {

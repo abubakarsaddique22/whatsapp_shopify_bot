@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConfigError
+from app.db import repositories as repo
 from app.domain.catalog import Page, Policy
 from app.integrations.embeddings.base import Embedder
 from app.integrations.shopify import gateway
@@ -194,11 +195,19 @@ async def ingest_documents(
             continue
         seen.add(doc.source_key)  # flagged documents count too: their old version stays
 
-        findings = scanner(cleaned)
+        # The title goes into every chunk, so it is scanned with the text.
+        findings = scanner(f"{doc.title}\n{cleaned}")
         if findings:
             report.flagged.append(FlaggedDocument(source_key=doc.source_key, findings=findings))
             log.warning(
                 "rag_ingest_flagged", extra={"source_key": doc.source_key, "findings": findings}
+            )
+            # One row per version of the document, not one per sync run (Blueprint 9.4).
+            await repo.add_security_event_once(
+                session,
+                "document_flagged",
+                ref=doc.source_key,
+                detail={"findings": findings, "document_hash": document_hash(doc, cleaned)},
             )
             continue
 

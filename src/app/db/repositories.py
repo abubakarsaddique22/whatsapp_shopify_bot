@@ -17,6 +17,8 @@ from app.db.tables import (
     Message,
     ProductImage,
     ProductMirror,
+    RuntimeFlag,
+    SecurityEvent,
     SyncEvent,
     SyncRun,
     VariantMirror,
@@ -25,6 +27,7 @@ from app.db.tables import (
 )
 from app.domain.models import ConversationState
 from app.integrations.whatsapp.payloads import InboundMessage
+from app.security.redaction import redact_cards
 from app.sync.webhooks import ShopifyDelivery
 
 
@@ -127,7 +130,7 @@ async def add_inbox(
             conversation_id=conversation_id,
             wa_id_hash=wa_id_hash,
             msg_type=msg.msg_type,
-            text=msg.text,
+            text=redact_cards(msg.text) if msg.text else msg.text,  # no card number is stored
             media_id=msg.media_id,
             mime_type=msg.mime_type,
             wa_timestamp=msg.wa_timestamp,
@@ -337,7 +340,12 @@ async def add_message(
     """Add one turn (direction 'in' or 'out') to the conversation transcript."""
     stmt = (
         insert(Message)
-        .values(conversation_id=conversation_id, direction=direction, body=body, wamid=wamid)
+        .values(
+            conversation_id=conversation_id,
+            direction=direction,
+            body=redact_cards(body),  # no card number is stored
+            wamid=wamid,
+        )
         .on_conflict_do_nothing(index_elements=["wamid"])
     )
     await session.execute(stmt)
@@ -576,3 +584,122 @@ async def last_ok_run_finished(session: AsyncSession, kind: str) -> datetime | N
         select(func.max(SyncRun.finished_at)).where(SyncRun.kind == kind, SyncRun.status == "ok")
     )
     return result.scalar_one_or_none()
+
+
+# ---- Phase 11: security events (Blueprint 9.3 point 7, 9.4)
+
+
+async def add_security_event(
+    session: AsyncSession,
+    kind: str,
+    *,
+    wa_hash: str | None = None,
+    ref: str | None = None,
+    detail: dict[str, Any] | None = None,
+    created_at: datetime | None = None,
+) -> None:
+    """Record one suspected attack or abuse. Never pass message text, secrets or a phone number:
+    wa_hash is the keyed hash of the sender, detail holds short facts. The caller commits.
+    created_at is for the rate limiter, which keeps all its times on one clock."""
+    event = SecurityEvent(kind=kind, wa_hash=wa_hash, ref=ref, detail=detail or {})
+    if created_at is not None:
+        event.created_at = created_at
+    session.add(event)
+    await session.flush()
+
+
+async def add_security_event_once(
+    session: AsyncSession, kind: str, *, ref: str, detail: dict[str, Any]
+) -> bool:
+    """Like add_security_event, but not again when a row with the same kind, ref and detail
+    already exists. A flagged document is found again on every sync run: one row is enough.
+    Returns True when a row was written."""
+    found = await session.execute(
+        select(SecurityEvent.id)
+        .where(SecurityEvent.kind == kind, SecurityEvent.ref == ref, SecurityEvent.detail == detail)
+        .limit(1)
+    )
+    if found.first() is not None:
+        return False
+    await add_security_event(session, kind, ref=ref, detail=detail)
+    return True
+
+
+async def count_recent_security_events(
+    session: AsyncSession, kinds: Collection[str], wa_hash: str, since: datetime
+) -> int:
+    """How many events of these kinds this sender caused since `since` (strikes, notices)."""
+    result = await session.execute(
+        select(func.count())
+        .select_from(SecurityEvent)
+        .where(
+            SecurityEvent.kind.in_(list(kinds)),
+            SecurityEvent.wa_hash == wa_hash,
+            SecurityEvent.created_at >= since,
+        )
+    )
+    return int(result.scalar_one())
+
+
+# ---- Phase 11: counters for rate limits and the daily budget (Blueprint 9.6)
+
+
+async def db_now(session: AsyncSession) -> datetime:
+    """The database clock. received_at and created_at come from it, so limits compare with it."""
+    return (await session.execute(select(func.now()))).scalar_one()
+
+
+async def inbox_counts(
+    session: AsyncSession, conversation_id: int, now: datetime
+) -> tuple[int, int, int]:
+    """Messages this sender sent in the last minute, hour and day, whatever happened to them."""
+    row = (
+        await session.execute(
+            select(
+                func.count().filter(WhatsAppInbox.received_at >= now - timedelta(minutes=1)),
+                func.count().filter(WhatsAppInbox.received_at >= now - timedelta(hours=1)),
+                func.count(),
+            ).where(
+                WhatsAppInbox.conversation_id == conversation_id,
+                WhatsAppInbox.received_at >= now - timedelta(days=1),
+            )
+        )
+    ).one()
+    return int(row[0]), int(row[1]), int(row[2])
+
+
+async def paid_message_counts(session: AsyncSession, since: datetime) -> tuple[int, int]:
+    """(text messages, voice notes) received since `since` that the bot did not ignore.
+
+    'ignored' rows (rate-limited, paused, handoff-only) cost nothing, so they are not counted.
+    """
+    row = (
+        await session.execute(
+            select(
+                func.count().filter(WhatsAppInbox.msg_type == "text"),
+                func.count().filter(WhatsAppInbox.msg_type == "audio"),
+            ).where(WhatsAppInbox.received_at >= since, WhatsAppInbox.status != "ignored")
+        )
+    ).one()
+    return int(row[0]), int(row[1])
+
+
+# ---- Phase 11: runtime flags (the kill switch the admin API can flip, step 8)
+
+KILL_SWITCH_FLAG = "kill_switch"
+
+
+async def get_flag(session: AsyncSession, name: str) -> bool:
+    """Is this runtime flag on? A flag that was never set is off."""
+    result = await session.execute(select(RuntimeFlag.enabled).where(RuntimeFlag.name == name))
+    return bool(result.scalar_one_or_none())
+
+
+async def set_flag(session: AsyncSession, name: str, enabled: bool) -> None:
+    """Turn a runtime flag on or off. The caller commits."""
+    stmt = insert(RuntimeFlag).values(name=name, enabled=enabled)
+    await session.execute(
+        stmt.on_conflict_do_update(
+            index_elements=["name"], set_={"enabled": enabled, "updated_at": func.now()}
+        )
+    )

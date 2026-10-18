@@ -1,8 +1,8 @@
 """SQLAlchemy tables. Starts empty; each phase adds its tables and an Alembic migration.
 
 Phase 3: catalog mirror | Phase 4: whatsapp_inbox, whatsapp_outbox, conversations, messages
-Phase 8: kb_documents, kb_chunks | Phase 10: sync_events, sync_runs | Phase 11: handoffs
-(the Phase 10 tables are at the end of this file)
+Phase 8: kb_documents, kb_chunks | Phase 10: sync_events, sync_runs | Phase 11: security_events,
+handoffs (the Phase 10 and 11 tables are at the end of this file)
 """
 
 from datetime import datetime
@@ -314,3 +314,80 @@ class SyncRun(Base):
 
     __table_args__ = (Index("ix_sync_runs_kind_started", "kind", "started_at"),)
     # status values: running | ok | failed
+
+
+# ---- Phase 11: human handoff (Blueprint 8.6, table 'handoffs')
+# One row per request for a person. At most ONE open row per conversation (partial unique index),
+# so a customer who asks twice does not create two tickets. The summary is built by
+# handoff/service.py from the conversation (a few lines, no whole chat). Deleted together with the
+# conversation (ON DELETE CASCADE), which is what scripts/delete_customer.py relies on.
+
+
+class Handoff(Base):
+    """A customer who needs a person: why, how urgent, a short summary, and who was told."""
+
+    __tablename__ = "handoffs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE")
+    )
+    # human_request | complaint | unclear | repeated_clarification | composer_failed | ...
+    reason: Mapped[str] = mapped_column(String(40))
+    urgency: Mapped[str] = mapped_column(String(8), default="normal", server_default="normal")
+    summary: Mapped[str] = mapped_column(Text, default="", server_default="")
+    language: Mapped[str | None] = mapped_column(String(16))
+    product_id: Mapped[str | None] = mapped_column(String)  # the product being discussed, if any
+    status: Mapped[str] = mapped_column(String(12), default="open", server_default="open")
+    # filled by handoff/notifier.py (step 6): when staff were told, or why that failed
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notify_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index(
+            "uq_handoffs_one_open",
+            "conversation_id",
+            unique=True,
+            postgresql_where=sa_text("status = 'open'"),
+        ),
+        Index("ix_handoffs_status_created", "status", "created_at"),
+    )
+    # status values: open | resolved
+
+
+# ---- Phase 11: security events (Blueprint 9.3 point 7, 9.4)
+# Every suspected attack or abuse leaves one row. No secrets, no message text, no phone number:
+# only a keyed hash of the sender and short facts such as which patterns matched.
+
+
+class SecurityEvent(Base):
+    """One suspected injection, flagged document, rate-limit strike or similar."""
+
+    __tablename__ = "security_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # document_flagged | injection_suspected | rate_limited | budget_reached | card_shared ...
+    kind: Mapped[str] = mapped_column(String(40))
+    wa_hash: Mapped[str | None] = mapped_column(String(64))  # keyed hash of the sender, never wa_id
+    ref: Mapped[str | None] = mapped_column(String(200))  # source_key of a document, a wamid ...
+    detail: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=sa_text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_security_events_kind_created", "kind", "created_at"),
+        Index("ix_security_events_wa_hash", "wa_hash"),
+    )
+
+
+# ---- Phase 11: runtime flags (step 8)
+# Switches the admin API flips while the worker runs. Today only 'kill_switch'.
+
+
+class RuntimeFlag(Base):
+    __tablename__ = "runtime_flags"
+
+    name: Mapped[str] = mapped_column(String(40), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_text("false"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

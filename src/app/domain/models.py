@@ -94,4 +94,8 @@ class ConversationState(BaseModel):
     clarification_count: int = 0
     needs_handoff: bool = False
     bot_paused_until: datetime | None = None
+    # Phase 11: why a person is needed (set by the handoff node, cleared on resume), and the pause
+    # the customer was already told about with ONE 'our team has your request' (then silence)
+    handoff_reason: str | None = None
+    pause_acked_for: datetime | None = None
     history: list[dict[str, str]] = []  # short rolling window: {"role": ..., "text": ...}

@@ -7,12 +7,15 @@ import sys
 from datetime import UTC, datetime
 
 from app.core.ids import correlation_id_var
+from app.security.redaction import redact_cards
 
 # Order matters: more specific patterns first.
 _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"Bearer\s+[A-Za-z0-9._\-~+/=]+", re.I), "Bearer [REDACTED]"),
     (re.compile(r"\b(?:shpat|shpca|shpss|shppa)_[A-Za-z0-9]{8,}"), "[REDACTED_SHOPIFY_TOKEN]"),
     (re.compile(r"\bsk-[A-Za-z0-9_\-]{10,}"), "[REDACTED_API_KEY]"),
+    (re.compile(r"\bgsk_[A-Za-z0-9]{20,}"), "[REDACTED_API_KEY]"),  # Groq
+    (re.compile(r"https://hooks\.slack\.com/[^\s\"']+"), "[REDACTED_SLACK_URL]"),
     (re.compile(r"\bEAA[A-Za-z0-9]{20,}"), "[REDACTED_META_TOKEN]"),
     (re.compile(r"sha256=[0-9a-fA-F]{16,}"), "sha256=[REDACTED]"),
     (re.compile(r"(?<![\w.])\+?\d[\d\s\-]{9,14}\d(?![\w.])"), "[PHONE]"),
@@ -35,6 +38,7 @@ def redact(text: str) -> str:
 
     text = _SHOPIFY_GID.sub(keep, text.replace("\x00", ""))  # set aside: the phone pattern
     # cannot touch it (a NUL in the input is dropped first, so it can never fake a placeholder)
+    text = redact_cards(text)  # before the phone pattern, which would leave the last digits
     for pattern, repl in _PATTERNS:
         text = pattern.sub(repl, text)
     return _KEPT.sub(lambda match: kept[int(match.group(1))], text)

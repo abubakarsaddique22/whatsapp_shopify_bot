@@ -79,6 +79,15 @@ class WhatsAppTemporaryError(WhatsAppError):
     code = "whatsapp_temporary_error"
 
 
+class NotificationError(AppError):
+    """Staff could not be told about a handoff or an alert (email, Slack or WhatsApp failed).
+
+    The message never holds the Slack URL, the SMTP password or a phone number.
+    """
+
+    code = "notification_error"
+
+
 class ProviderError(AppError):
     """LLM / speech / embedding provider failed."""
 

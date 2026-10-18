@@ -62,6 +62,7 @@ from app.core.settings import get_settings
 from app.db import repositories as repo
 from app.domain.models import ConversationState, Intent
 from app.language.policy import ReplyLang
+from app.security.erasure import checkpoint_thread_id
 
 log = logging.getLogger(__name__)
 
@@ -156,6 +157,15 @@ async def finish_node(state: GraphState, deps: Deps) -> dict[str, Any]:
         ]
         conv.history = [*conv.history, *lines][-2 * HISTORY_WINDOW :]
     conv.tool_results = []
+    if state.get("security_event") == "abuse_or_injection":
+        # Phase 11: a strike for the rate limiter (security/rate_limit.py STRIKE_KINDS). Only the
+        # sender hash is stored, never the message text.
+        await repo.add_security_event(
+            deps.session,
+            "injection_suspected",
+            wa_hash=conv.sender_hash,
+            detail={"source": "router"},
+        )
     await repo.save_state(deps.session, state["conversation_id"], conv)
     return {"conversation": conv}
 
@@ -175,7 +185,7 @@ def trace_id(correlation_id: str | None) -> uuid.UUID | None:
 
 def turn_config(conversation_id: int, correlation_id: str | None) -> dict[str, Any]:
     config: dict[str, Any] = {
-        "configurable": {"thread_id": f"conversation-{conversation_id}"},
+        "configurable": {"thread_id": checkpoint_thread_id(conversation_id)},
         "recursion_limit": MAX_GRAPH_STEPS,
         "run_name": "whatsapp_turn",
         "tags": [TRACE_NAMESPACE],
