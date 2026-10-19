@@ -14,14 +14,15 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | 2 | Shopify read-only gateway (live products, price, stock) | Done |
 | 3 | Product tools, search, catalog mirror, `app.cli ask` | Done |
 | 4 | WhatsApp text: webhook, inbox/outbox, worker, `/dev/simulate` | Done, tag phase-4-done (sirf real phone se photo check baqi) |
-| 5 | Language detection, router, reply-language policy, debug reply | Done (router language match 92.8%, target 95%) |
+| 5 | Language detection, router, reply-language policy, debug reply | Done (router language match 94.2% on 2026-10-19 (Ollama), target 95%: abhi NOT MET; golden labels ka native speaker review baqi) |
 | 6 | Voice: fake STT, Groq Whisper adapter, media download + ffmpeg, voice gate, `/dev/simulate` audio, bake-off script | Steps 1 se 5 done (tests pass). Step 6 (bake-off, live voice-note check) phone aur token ka intezar |
 | 7 | Product images: image resolver, JPEG conversion (AVIF/WebP), WhatsApp image bhejna (link ya upload), image flow (`image_request`), text-link fallback | Steps 1 se 5 done (T05, T23, T24 pass, fakes ke saath). Asli phone par images ka live check phone aur token ka intezar |
 | 8 | RAG: policies/FAQ ko chunk karna, local embeddings (sentence-transformers, `paraphrase-multilingual-MiniLM-L12-v2`; code ka default `BAAI/bge-m3` hai, uska score abhi nahi naapa), pgvector index, hybrid retrieval, `rag-ingest` / `rag-search` / `rag-eval` | Done, tag phase-8-done (baseline 2026-10-16: hit rate 97.5%, abstention 14/20). Real store par `rag-ingest` / `rag-search` ka manual check baqi |
 | 9 | LangGraph workflow: state, permission gate, tools, clarify/refuse/handoff templates, composer, validator, graph + Postgres checkpointer, worker, `app.cli chat` | Done, tag phase-9-done (full pytest/ruff/mypy pass, asli model se 12 messages ka check 2026-10-17). Phone par 10-turn check aur LangSmith traces phone ka intezar |
 | 10 | Shopify sync: webhook endpoint (HMAC), webhook registration, sync worker (handlers), selective re-embedding, reconciliation jobs (delta / full / policy), monitor + alarms + dead letter | Done (tests pass, 2026-10-17: T16, T17, T18, out-of-order, retry, missed-event repair). Commit + tag phase-10-done haath se |
-| 11 | Security, privacy, handoff: card redaction, injection scan (English, Roman Urdu, Urdu), rate limits + daily budget, handoff (pause, resume, notifier), kill switch, admin API (default band), retention + `delete_customer.py`, adversarial tests T19 se T21 | Steps 1 se 9 done. Step 10 (adversarial tests, `docs/threat_model.md`, `docs/security_checklist.md`) likha gaya, tests chalane baqi; phir commit + tag phase-11-done haath se |
-| 12 se 14 | evals, AWS, acceptance | Phase 12 shuru (Steps 1 se 3), baqi nahi |
+| 11 | Security, privacy, handoff: card redaction, injection scan (English, Roman Urdu, Urdu), rate limits + daily budget, handoff (pause, resume, notifier), kill switch, admin API (default band), retention + `delete_customer.py`, adversarial tests T19 se T21 | Steps 1 se 10 done: adversarial tests, `docs/threat_model.md`, `docs/security_checklist.md`; commit + tag phase-11-done ho chuka (2026-10-19). Phone par aakhri manual attack check baqi |
+| 12 | Evaluation: product Q&A, natural Q&A, security, language, tools, retrieval, duplicates, latency evaluators + `scripts/run_eval.py` (`--all`) | Shuru (2026-10-18). Steps 1 se 4 done (2026-10-19): sab evaluators likhe gaye aur `run_eval.py --all --ollama` chal chuka. MET: natural, tools, security, duplicates (0 duplicate replies), latency (Groq, text p50 3.5 s, p95 5.7 s). NOT MET: language (router 94.2%, target 95%), retrieval (hit rate 97.5% MET, abstention 70%, target 90%), golden 64/65 (colors-06 internet band hone se run error tha, ghalat fact nahi; sirf wahi sawal dobara chalana baqi). Baqi: Step 5 failure drills, T01 se T25 map, LangSmith datasets, CI gate, Groq baselines + `docs/eval_report.md`, commit + tag phase-12-done |
+| 13 se 14 | AWS, acceptance | Shuru nahi hua |
 
 ## Code ka naqsha (`src/app/`)
 
@@ -49,6 +50,8 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | `prompts/`, `config/`, `evals/` | Router aur composer prompts, lexicon aur mappings, golden sets |
 
 Phase 11: `security/` (`redaction.py`, `injection_scan.py`, `rate_limit.py`, `erasure.py`), `handoff/` (`service.py`, `notifier.py`), `api/admin.py` (default band), `jobs/retention.py`, `scripts/delete_customer.py`.
+
+Phase 12: `src/app/evals/` (`evaluators.py` exact-fact checks, `product_qa.py` golden + natural Q&A scoring, `security.py`, `language.py`, `tools.py`, `retrieval.py`, `runner.py` = asli bot se ek sawal poochna, script aur tests dono istemal karte hain), `scripts/run_eval.py` (asli bot par eval chalata hai), `scripts/make_product_qa.py` aur `scripts/make_natural_qa.py` (sawalon ki files banate hain), `tests/llm/` (asli model wale tests, `-m llm`).
 
 ## Windows (cmd) mein chalane ke steps
 ```
@@ -186,6 +189,44 @@ curl -X POST http://localhost:8000/admin/kill-switch -H "X-Admin-Key: KEY" -H "C
 ```
 Handoff ka channel check: `uv run python -m app.handoff.notifier --test`. Ek customer ka data mitana: `uv run python scripts\delete_customer.py --wa-id <number>` (bina `--yes` sirf ginti). Retention roz: `uv run python -m app.jobs.retention --dry-run`.
 Go-live se pehle `docs/security_checklist.md` ke sab items aur `docs/threat_model.md` ke known gaps dekhein.
+
+## Evaluation chalana (Phase 12)
+Eval ka kaam Ollama par chalta hai (`--ollama`, model rule `docs/PROGRESS.md` mein), app khud Groq par. Final baseline (gate ke liye) Groq par ek baar chalana hai: `--ollama` ke baghair, chhote hisson mein (`--limit`, `--kind`, `--ids`), kyunke free Groq tier rate-limit karta hai.
+`.env` mein `LLM_*` aur `COMPOSER_MODEL` chahiye, aur Postgres (`docker compose up -d db`); security set ko database nahi chahiye. Kuch WhatsApp par nahi jata.
+```
+uv run python scripts\run_eval.py --ollama --delay 1                  REM golden: store ke price/stock/colours, har jawab sahi (gate 100%)
+uv run python scripts\run_eval.py --set natural --ollama --delay 1    REM ulte seedhe sawal, ghalat fact ek bhi nahi (poochna theek)
+uv run python scripts\run_eval.py --set security --ollama --delay 1   REM evals\adversarial.jsonl: router har hamla pehchane (gate 100%)
+uv run python scripts\run_eval.py --set language --ollama --delay 1   REM router aur reply ki zubaan (gate 95%)
+uv run python scripts\run_eval.py --set tools --ollama --delay 1      REM sahi tool chala? product, policy, attack (gate 95%, koi attack data tool tak na pahunche)
+uv run python scripts\run_eval.py --set retrieval                     REM evals\rag_golden.jsonl: hit rate aur abstention (blueprint: 90% har ek); LLM nahi, Postgres aur local embedding model
+uv run python scripts\run_eval.py --set duplicates                    REM T16 + chaos: 0 duplicate reply (worker band; asli worker, fake Meta, koi model nahi)
+uv run python scripts\run_eval.py --set latency --limit 30 --delay 25 REM webhook se outbox tak, text p50 8 s / p95 15 s (worker band; Groq par, --ollama mana; free tier ke 429 wale runs gine nahi jaate)
+uv run python scripts\run_eval.py --all --ollama --delay 3            REM sab evaluators ek saath, aakhir mein SUMMARY (latency --ollama ke saath SKIPPED)
+uv run python scripts\run_eval.py --ollama --ids price-03,price-09    REM sirf kuch sawal
+uv run pytest tests\unit\test_language_eval.py tests\unit\test_security_eval.py tests\unit\test_tools_eval.py tests\unit\test_retrieval_eval.py
+uv run pytest -m llm tests\llm                                         REM asli model chahiye (lamba: takreeban 20 minute), roz ke pytest mein skip hota hai
+```
+Ab tak ke nateeje (Ollama, 2026-10-19; Groq par final baseline baqi):
+
+| Evaluator | Nateeja | Gate (blueprint 11.4, proposed) |
+|-----------|---------|------|
+| Golden product Q&A | 64/65 (price 32/32, stock 24/24, colours 8/9); colors-06 provider error (internet band), ghalat fact nahi | 100%: NOT MET, `--ids colors-06` dobara chalana baqi |
+| Natural Q&A | 34/42 sahi, 8 ne poochha, ghalat fact 0 | ghalat fact 0: MET |
+| Security | router 46/46, store texts 21/22 (adv-048 known gap) | 100%: MET |
+| Language | reply 100% (69/69), router 94.2% (ek run mein 95%+ bhi); 4 ghalatiyan sab `roman_ur` ko `mixed` kehna (ru-04, ru-05, mx-04, mx-06) | 95% dono: router wala hissa abhi NOT MET |
+| Tools | 190/191 = 99.5% (attack 46/46, policy 79/80, product 65/65); ek ghalti priv-ur-08 ("WhatsApp chat kitne mahine baad delete hoti hai?": router ne out_of_scope kaha) | 95% aur koi attack data tool tak nahi: MET |
+| Retrieval (RAG_MIN_SCORE 0.40) | hit rate 97.5% (en 100%, roman_ur 95%), abstention 14/20 = 70%, MRR 0.899 (sirf report) | hit 90% MET, abstention 90% NOT MET |
+| Duplicates (T16 + chaos) | 5 scenarios mein duplicate replies 0, duplicate inbox rows 0, koi reply gum nahi; known gap `meta_accepts_then_crash` (Meta ke accept ke baad worker mare to reply dobara jata hai: 2 duplicates) gate mein nahi ginta | 0 duplicate: MET |
+| Latency (text, Groq free tier) | 22 achhe runs / 30: p50 3.5 s, p95 5.7 s, max 6.7 s (+2 s poll wait: 5.5 s / 7.7 s); 8 runs gine nahi (7 Groq 429, 1 provider error); voice abhi nahi (0 clips) | p50 8 s aur p95 15 s: MET |
+
+Retrieval mein abstention ki kami 6 aise sawalon se hai jo documents mein nahi hain magar asli sawalon jaise lagte hain (smart watches, installments, straps): koi threshold unhe alag nahi kar sakta, composer ko abstain karna hoga (Phase 9) ya client ke saath gate badalna hoga (Phase 12, Step 10). Retrieval ke `-m llm` test mein abstention ka hissa isi wajah se xfail hai.
+
+Duplicates ka known gap (`meta_accepts_then_crash`): Meta ke paas idempotency key nahi, is liye ye khidki database rule se band nahi hoti; client ke saath faisla baqi (Step 9): abhi crash par reply dobara jata hai (duplicate, gum jawab se behtar), ya at-most-once (bhejne se pehle "sending" mark, crash par dobara nahi, kabhi jawab gum ho sakta hai).
+Latency ka baseline Groq free tier par hai (429 wale runs gine nahi jaate); final baseline paid ya chhote hisson mein dobara chalegi (Step 9).
+
+Sawalon ki file store se dobara banane ke liye (jab prices ya stock badlein): `uv run python scripts\make_product_qa.py`, phir file commit karein. Gate ka aakhri nateeja `docs/eval_report.md` mein hoga (abhi likhi nahi).
+Security eval sirf router ka intent dekhta hai, jawab ka text nahi; ye aur `adv-048` ka known gap `docs/threat_model.md` mein likha hai. Language eval ka router wala hissa abhi 95% se neeche hai, gate ko pass dikhane ke liye `mixed` ko `roman_ur` na ginein jab tak owner faisla na kare.
 
 ## Qaide
 - `.env` kabhi Git ya chat mein na dalein.
