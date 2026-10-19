@@ -25,7 +25,7 @@ from app.core.tracing import configure_tracing
 from app.db import repositories as repo
 from app.db.session import get_engine, get_sessionmaker
 from app.domain.models import ConversationState
-from app.evals import product_qa
+from app.evals import product_qa, security
 from app.integrations.llm.chat_factory import get_chat_model, get_eval_chat_model
 from app.integrations.llm.fake_llm import FakeLLM
 
@@ -105,7 +105,30 @@ async def ask_bot(deps_args: dict[str, Any], texts: list[str]) -> str:
     return "\n".join(r.body for r in replies if r.kind != "image" and r.body)
 
 
+async def run_security(args: argparse.Namespace) -> int:
+    """evals/adversarial.jsonl: the real router on every attack, the scanner on every store text.
+
+    No database and no store needed. The router model is Ollama with --ollama (the model rule in
+    docs/PROGRESS.md), otherwise the app's router model on Groq.
+    """
+    rows = security.load_rows()
+    customers = security.customer_rows(rows)
+    if args.ids:
+        wanted = {i.strip() for i in args.ids.split(",")}
+        customers = [r for r in customers if r.id in wanted]
+    llm = get_eval_chat_model() if args.ollama else get_chat_model("router")
+    if isinstance(llm, FakeLLM):
+        raise SystemExit("run_eval needs a real model: set LLM_PROVIDER=groq in .env")
+    print(f"Security: {len(customers)} attack messages through the real router\n")
+    results = await security.run_router(customers, llm, limit=args.limit, delay=args.delay)
+    docs = security.scan_documents(security.document_rows(rows))
+    print(security.format_report(results, docs))
+    return 0 if security.gate_met(results, docs) else 1
+
+
 async def run(args: argparse.Namespace) -> int:
+    if args.set == "security":
+        return await run_security(args)
     natural = args.set == "natural"
     rows = product_qa.load_rows(product_qa.NATURAL if natural else product_qa.DATA)
     vocab = product_qa.vocabulary(rows)
@@ -160,10 +183,11 @@ def main() -> None:
     parser.add_argument("--kind", choices=["price", "stock", "colors", "sizes"])
     parser.add_argument(
         "--set",
-        choices=["golden", "natural"],
+        choices=["golden", "natural", "security"],
         default="golden",
         help="golden: exact titles, every answer must be right. natural: messy questions, "
-        "no wrong fact allowed (asking is fine)",
+        "no wrong fact allowed (asking is fine). security: evals/adversarial.jsonl, the real "
+        "router must recognise every attack",
     )
     parser.add_argument("--limit", type=int, help="only the first N questions")
     parser.add_argument("--ids", help="only these question ids, e.g. price-31,price-32")
