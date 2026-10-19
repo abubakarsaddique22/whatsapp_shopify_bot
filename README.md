@@ -20,7 +20,8 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | 8 | RAG: policies/FAQ ko chunk karna, local embeddings (sentence-transformers, `paraphrase-multilingual-MiniLM-L12-v2`; code ka default `BAAI/bge-m3` hai, uska score abhi nahi naapa), pgvector index, hybrid retrieval, `rag-ingest` / `rag-search` / `rag-eval` | Done, tag phase-8-done (baseline 2026-10-16: hit rate 97.5%, abstention 14/20). Real store par `rag-ingest` / `rag-search` ka manual check baqi |
 | 9 | LangGraph workflow: state, permission gate, tools, clarify/refuse/handoff templates, composer, validator, graph + Postgres checkpointer, worker, `app.cli chat` | Done, tag phase-9-done (full pytest/ruff/mypy pass, asli model se 12 messages ka check 2026-10-17). Phone par 10-turn check aur LangSmith traces phone ka intezar |
 | 10 | Shopify sync: webhook endpoint (HMAC), webhook registration, sync worker (handlers), selective re-embedding, reconciliation jobs (delta / full / policy), monitor + alarms + dead letter | Done (tests pass, 2026-10-17: T16, T17, T18, out-of-order, retry, missed-event repair). Commit + tag phase-10-done haath se |
-| 11 se 14 | security, evals, AWS, acceptance | Shuru nahi hue |
+| 11 | Security, privacy, handoff: card redaction, injection scan (English, Roman Urdu, Urdu), rate limits + daily budget, handoff (pause, resume, notifier), kill switch, admin API (default band), retention + `delete_customer.py`, adversarial tests T19 se T21 | Steps 1 se 9 done. Step 10 (adversarial tests, `docs/threat_model.md`, `docs/security_checklist.md`) likha gaya, tests chalane baqi; phir commit + tag phase-11-done haath se |
+| 12 se 14 | evals, AWS, acceptance | Phase 12 shuru (Steps 1 se 3), baqi nahi |
 
 ## Code ka naqsha (`src/app/`)
 
@@ -47,7 +48,7 @@ Taza haalat hamesha `docs/PROGRESS.md` mein hoti hai.
 | `scripts/` | `bakeoff.py` (speech provider ka muqabla), `debug_products.py`, `register_webhooks.py` (Shopify webhooks banata hai, dobara chalane par duplicate nahi) |
 | `prompts/`, `config/`, `evals/` | Router aur composer prompts, lexicon aur mappings, golden sets |
 
-Khali (baad ke phases ke liye): `security/`, `handoff/` (abhi stub).
+Phase 11: `security/` (`redaction.py`, `injection_scan.py`, `rate_limit.py`, `erasure.py`), `handoff/` (`service.py`, `notifier.py`), `api/admin.py` (default band), `jobs/retention.py`, `scripts/delete_customer.py`.
 
 ## Windows (cmd) mein chalane ke steps
 ```
@@ -170,6 +171,21 @@ uv run python -m app.sync.monitor --retry-failed              REM sab wapas pend
 uv run python -m app.sync.monitor --retry-failed --event-id 42
 ```
 Known limit: bot ka live stock cache sync worker se saaf nahi hota (dono alag process hain). `LIVE_STOCK_CACHE_SECONDS=0` (default) par cache hai hi nahi, to is ka asar nahi; cache on karein to purani cheez `LIVE_STOCK_CACHE_SECONDS` ke baad khud expire hoti hai.
+
+## Security ko test karna (Phase 11)
+Sab kuch bina phone ke chalta hai (asli worker, asli Postgres, FakeLLM). `docker compose up -d db` aur `uv run alembic upgrade head` pehle.
+```
+uv run pytest tests\adversarial
+uv run pytest tests\integration\test_worker_phase11.py tests\integration\test_admin_api.py tests\integration\test_retention_and_erasure.py
+```
+`tests\adversarial` mein: T19 (private data), T20 (injection, secrets), T21 (zehreela documents), rate limit ka wapas theek hona, handoff aur resume, kill switch, log scan, safe defaults. `evals\adversarial.jsonl` mein 68 hamle aur normal jumle hain.
+
+Kill switch (admin API on ho to; `.env` mein `ADMIN_ENDPOINTS_ENABLED=true` aur 24+ character `ADMIN_API_KEY`):
+```
+curl -X POST http://localhost:8000/admin/kill-switch -H "X-Admin-Key: KEY" -H "Content-Type: application/json" -d "{\"on\": true}"
+```
+Handoff ka channel check: `uv run python -m app.handoff.notifier --test`. Ek customer ka data mitana: `uv run python scripts\delete_customer.py --wa-id <number>` (bina `--yes` sirf ginti). Retention roz: `uv run python -m app.jobs.retention --dry-run`.
+Go-live se pehle `docs/security_checklist.md` ke sab items aur `docs/threat_model.md` ke known gaps dekhein.
 
 ## Qaide
 - `.env` kabhi Git ya chat mein na dalein.

@@ -129,7 +129,7 @@ class AudioConversionError(AppError):
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:
-        log.warning("app_error", extra={"code": exc.code, "message_text": exc.message})
+        log.warning("app_error", extra={"code": exc.code, "error_message": exc.message})
         return JSONResponse(status_code=exc.status_code, content={"error": exc.code})
 
     @app.exception_handler(Exception)
