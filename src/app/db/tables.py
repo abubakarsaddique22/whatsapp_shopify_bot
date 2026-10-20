@@ -329,9 +329,7 @@ class Handoff(Base):
     __tablename__ = "handoffs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    conversation_id: Mapped[int] = mapped_column(
-        ForeignKey("conversations.id", ondelete="CASCADE")
-    )
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
     # human_request | complaint | unclear | repeated_clarification | composer_failed | ...
     reason: Mapped[str] = mapped_column(String(40))
     urgency: Mapped[str] = mapped_column(String(8), default="normal", server_default="normal")

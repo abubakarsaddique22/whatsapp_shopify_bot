@@ -33,6 +33,7 @@ from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.image_flow import Reply
@@ -60,7 +61,15 @@ from app.agent.templates import render
 from app.agent.tools import TOOL_IMAGE
 from app.core.settings import get_settings
 from app.db import repositories as repo
-from app.domain.models import ConversationState, Intent
+from app.domain.models import (
+    BotResponse,
+    ConversationState,
+    ImageSelection,
+    Intent,
+    Lang,
+    RouterOutput,
+    ToolResult,
+)
 from app.language.policy import ReplyLang
 from app.security.erasure import checkpoint_thread_id
 
@@ -285,10 +294,61 @@ def checkpoint_url() -> str:
     return get_settings().database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
 
 
+# Our own types that the graph state keeps in a checkpoint. LangGraph reads them back only when
+# they are on this list (it warns today and will refuse in a later version). A new model class in
+# GraphState or ConversationState must be added here, or a saved checkpoint cannot be read back.
+CHECKPOINT_TYPES: tuple[type, ...] = (
+    Lang,
+    Intent,
+    RouterOutput,
+    ImageSelection,
+    BotResponse,
+    ToolResult,
+    ConversationState,
+)
+
+
+def checkpoint_serializer() -> JsonPlusSerializer:
+    """The checkpoint serializer that may read back only the types in CHECKPOINT_TYPES."""
+    return JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINT_TYPES)
+
+
+def turn_summary(state: GraphState) -> dict[str, Any]:
+    """What one turn did, for the worker log: no customer text, no product words, no phone.
+
+    With this line a wrong reply on the phone can be read from the log (which branch, which tools,
+    which tool errors, whether the safe fallback answered) without the trace.
+    """
+    router = state.get("router")
+    summary: dict[str, Any] = {
+        "source": state.get("source"),
+        "intent": router.intent.value if router else None,
+        "language": router.language.value if router else None,
+        "reply_in": state.get("reply_language"),
+        "branch": state.get("branch"),
+        "tools": [result.tool for result in state.get("tool_results", [])],
+        "tool_errors": list(state.get("tool_errors", [])),
+        "compose_attempts": state.get("compose_attempts", 0),
+        "validation_errors": list(state.get("validation_errors", [])),
+        "used_fallback": bool(state.get("used_fallback")),
+    }
+    for result in state.get("tool_results", []):
+        if result.tool == "search_products" and isinstance(result.data, dict):
+            summary["search_kind"] = result.data.get("kind")
+            summary["search_found"] = len(result.data.get("candidates", []))
+    if state.get("handoff_reason"):
+        summary["handoff_reason"] = state.get("handoff_reason")
+    if state.get("security_event"):
+        summary["security_event"] = state.get("security_event")
+    return summary
+
+
 @asynccontextmanager
 async def open_checkpointer(url: str | None = None) -> AsyncIterator[AsyncPostgresSaver]:
     """The LangGraph Postgres saver. setup() creates its tables on the first run (re-runnable)."""
-    async with AsyncPostgresSaver.from_conn_string(url or checkpoint_url()) as saver:
+    async with AsyncPostgresSaver.from_conn_string(
+        url or checkpoint_url(), serde=checkpoint_serializer()
+    ) as saver:
         await saver.setup()
         yield saver
 

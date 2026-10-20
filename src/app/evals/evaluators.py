@@ -58,15 +58,31 @@ def check_price(reply: str, expected: Mapping[str, Any]) -> Check:
 
 # Order matters: 'not available' must be read as OUT before 'available' is read as IN.
 _OUT = (
-    "out of stock", "sold out", "not in stock", "not available", "unavailable", "khatam",
-    "stock mein nahi", "stock main nahi", "available nahi", "maujood nahi", "mojood nahi",
+    "out of stock",
+    "sold out",
+    "not in stock",
+    "not available",
+    "unavailable",
+    "khatam",
+    "stock mein nahi",
+    "stock main nahi",
+    "available nahi",
+    "maujood nahi",
+    "mojood nahi",
     "stock nahi",
 )
 _LOW = ("limited", "low stock", "few left", "only a few", "kam stock")
 _BACKORDER = ("backorder", "back order", "take longer", "delivery may")
 _IN = (
-    "in stock", "available", "maujood", "mojood", "stock mein hai", "stock main hai",
-    "mil jaye", "mil jayegi", "mil jaegi",
+    "in stock",
+    "available",
+    "maujood",
+    "mojood",
+    "stock mein hai",
+    "stock main hai",
+    "mil jaye",
+    "mil jayegi",
+    "mil jaegi",
 )
 
 
@@ -109,9 +125,7 @@ def _same_letters(text: str, value: str) -> bool:
     return len(parts) > 1 and "".join(parts) in "".join(re.findall(r"[a-z0-9]+", text.lower()))
 
 
-def check_values(
-    reply: str, expected: Mapping[str, Any], forbidden: Iterable[str] = ()
-) -> Check:
+def check_values(reply: str, expected: Mapping[str, Any], forbidden: Iterable[str] = ()) -> Check:
     values = [str(v) for v in expected["values"]]
     # A merchant's option can be a pair ('Gold & Black', 'Green-Black'). A reply that names every
     # part of it ('gold ... black') says the same thing, so the parts count as the value.

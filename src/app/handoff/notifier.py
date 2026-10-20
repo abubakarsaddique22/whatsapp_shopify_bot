@@ -122,9 +122,7 @@ def build_handoff_notification(
 ) -> Notification:
     """The message staff read: who, why, since when, what was said. No full phone number."""
     urgent = urgency == "high"
-    since = (
-        created_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC") if created_at else "just now"
-    )
+    since = created_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC") if created_at else "just now"
     body = "\n".join(
         [
             f"Handoff #{handoff_id} | urgency: {urgency} | reason: {reason}",
@@ -312,9 +310,7 @@ async def notify_pending(
             log.info("handoff_notified", extra={"handoff_id": handoff.id})
             continue
         failed += 1
-        log.warning(
-            "handoff_notify_failed", extra={"handoff_id": handoff.id, "code": error_code}
-        )
+        log.warning("handoff_notify_failed", extra={"handoff_id": handoff.id, "code": error_code})
     await session.flush()
     return NotifyResult(sent, failed)
 

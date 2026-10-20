@@ -39,9 +39,7 @@ def load_rows(path: Path = DATA) -> list[dict[str, Any]]:
     return rows
 
 
-def select(
-    rows: list[dict[str, Any]], kind: str | None, limit: int | None
-) -> list[dict[str, Any]]:
+def select(rows: list[dict[str, Any]], kind: str | None, limit: int | None) -> list[dict[str, Any]]:
     """Only one kind and/or the first N rows. The vocabulary is built from ALL rows first."""
     chosen = [r for r in rows if kind is None or r["kind"] == kind]
     return chosen[:limit] if limit else chosen

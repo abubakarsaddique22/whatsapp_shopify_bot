@@ -156,9 +156,7 @@ def judge(drill: Drill, outcomes: Mapping[str, str]) -> DrillResult:
     return DrillResult(drill, "GAP" if drill.gap else "PASS")
 
 
-def judge_all(
-    outcomes: Mapping[str, str], drills: Sequence[Drill] = DRILLS
-) -> list[DrillResult]:
+def judge_all(outcomes: Mapping[str, str], drills: Sequence[Drill] = DRILLS) -> list[DrillResult]:
     return [judge(drill, outcomes) for drill in drills]
 
 

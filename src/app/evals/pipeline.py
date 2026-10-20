@@ -246,9 +246,7 @@ async def webhook_client() -> AsyncIterator[httpx.AsyncClient]:
         yield client
 
 
-async def deliver(
-    client: httpx.AsyncClient, wa_id: str, wamid: str, text: str, times: int
-) -> None:
+async def deliver(client: httpx.AsyncClient, wa_id: str, wamid: str, text: str, times: int) -> None:
     """Post the SAME signed webhook `times` times, all at once (Meta retrying while we are slow)."""
     raw = json.dumps(webhook_body(wa_id, wamid, text)).encode()
     headers = {

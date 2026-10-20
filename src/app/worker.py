@@ -22,6 +22,7 @@ from app.agent.graph import (
     open_checkpointer,
     run_turn,
     to_replies,
+    turn_summary,
     use_selector_event_loop,
 )
 from app.agent.image_flow import Reply, run_image_flow
@@ -139,6 +140,7 @@ async def graph_reply(
         source=source,
         correlation_id=correlation_id,
     )
+    log.info("turn_done", extra=turn_summary(state))
     return to_replies(state)
 
 

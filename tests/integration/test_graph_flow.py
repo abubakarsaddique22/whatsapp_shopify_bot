@@ -649,7 +649,8 @@ async def test_t13_an_ambiguous_product_gets_one_question_naming_the_candidates(
     assert bot.names == [TOOL_SEARCH]  # no price is asked for a product nobody chose
     assert len(bot.llm.calls) == 1  # only the router: the question is a template
     assert bot.reply == bot.template(
-        "ask_which_product", names="Zorbex Tide ya Zorbex Tide Ultra"  # Roman Urdu: 'ya', not 'or'
+        "ask_which_product",
+        names="Zorbex Tide ya Zorbex Tide Ultra",  # Roman Urdu: 'ya', not 'or'
     )
     saved = bot.saved[-1]
     assert saved.clarification_count == 1

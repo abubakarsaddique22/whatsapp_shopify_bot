@@ -142,8 +142,7 @@ async def test_t21_an_attack_added_to_a_real_policy_keeps_the_last_good_version(
     strict=True,
     raises=AssertionError,
     reason=(
-        "KNOWN GAP: ingest scans the text after HTML-like markup is stripped "
-        "(docs/threat_model.md)"
+        "KNOWN GAP: ingest scans the text after HTML-like markup is stripped (docs/threat_model.md)"
     ),
 )
 @pytest.mark.parametrize("row", GAPS, ids=ids(GAPS))

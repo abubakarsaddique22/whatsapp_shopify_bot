@@ -183,8 +183,7 @@ async def run_retrieval(args: argparse.Namespace) -> int:
     cases = cases[: args.limit]
     embedder = get_eval_embedder()
     print(
-        f"Retrieval: {len(cases)} golden questions, "
-        f"embedder {embedder.name} / {embedder.model}\n"
+        f"Retrieval: {len(cases)} golden questions, embedder {embedder.name} / {embedder.model}\n"
     )
     try:
         results = await retrieval.run(embedder, cases=cases)
@@ -230,9 +229,7 @@ async def run_latency(args: argparse.Namespace) -> int:
         raise SystemExit("run_eval: latency counts only on the app's own models: no --ollama")
     deps_args_or_exit(args)  # a real model must be set up, not the FakeLLM
     rows = [
-        r
-        for r in product_qa.load_rows()
-        if r["kind"] in ("price", "stock") and not r.get("setup")
+        r for r in product_qa.load_rows() if r["kind"] in ("price", "stock") and not r.get("setup")
     ]
     wanted = args.limit or LATENCY_SAMPLE
     step = max(1, len(rows) // wanted)  # spread the sample over price and stock questions

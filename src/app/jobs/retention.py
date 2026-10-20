@@ -92,9 +92,7 @@ async def _active_conversation_ids(session: AsyncSession, cutoff: datetime) -> l
     return list(result.scalars().all())
 
 
-async def _apply(
-    session: AsyncSession, settings: Settings, moment: datetime
-) -> dict[str, int]:
+async def _apply(session: AsyncSession, settings: Settings, moment: datetime) -> dict[str, int]:
     def before(days: int) -> datetime:
         return moment - timedelta(days=days)
 

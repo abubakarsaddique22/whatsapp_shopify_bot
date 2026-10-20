@@ -106,8 +106,7 @@ def format_report(
     ]
     if text["good"] < MIN_SAMPLES:
         lines.append(
-            f"  NOT ENOUGH GOOD RUNS: {MIN_SAMPLES} needed for a p95 "
-            f"(run again, or raise --limit)"
+            f"  NOT ENOUGH GOOD RUNS: {MIN_SAMPLES} needed for a p95 (run again, or raise --limit)"
         )
     if text["bad"]:
         lines.append(f"\nRuns not counted ({len(text['bad'])}):")

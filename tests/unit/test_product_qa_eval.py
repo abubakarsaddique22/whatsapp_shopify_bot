@@ -15,19 +15,31 @@ from app.evals.product_qa import (
 
 ROWS = [
     {
-        "id": "price-01", "kind": "price", "lang": "en", "question": "How much is the Box?",
+        "id": "price-01",
+        "kind": "price",
+        "lang": "en",
+        "question": "How much is the Box?",
         "expected": {"amount": "3000.00", "currency": "PKR"},
     },
     {
-        "id": "stock-01", "kind": "stock", "lang": "roman_ur", "question": "Box available hai?",
+        "id": "stock-01",
+        "kind": "stock",
+        "lang": "roman_ur",
+        "question": "Box available hai?",
         "expected": {"stock": "in_stock"},
     },
     {
-        "id": "colors-01", "kind": "colors", "lang": "mixed", "question": "Watch A colours?",
+        "id": "colors-01",
+        "kind": "colors",
+        "lang": "mixed",
+        "question": "Watch A colours?",
         "expected": {"values": ["Black", "Blue"]},
     },
     {
-        "id": "colors-02", "kind": "colors", "lang": "en", "question": "Watch B colours?",
+        "id": "colors-02",
+        "kind": "colors",
+        "lang": "en",
+        "question": "Watch B colours?",
         "expected": {"values": ["Green", "Red"]},
     },
 ]

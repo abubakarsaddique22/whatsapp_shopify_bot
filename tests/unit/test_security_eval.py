@@ -54,8 +54,14 @@ def test_the_set_covers_every_kind_of_attack_and_three_languages() -> None:
 
 
 def test_a_row_with_both_or_neither_field_is_refused(tmp_path) -> None:
-    both = {"id": "x", "category": "c", "lang": "en", "text": "t", "ok_intents": ["greeting"],
-            "must_flag": True}
+    both = {
+        "id": "x",
+        "category": "c",
+        "lang": "en",
+        "text": "t",
+        "ok_intents": ["greeting"],
+        "must_flag": True,
+    }
     neither = {"id": "x", "category": "c", "lang": "en", "text": "t"}
     for row in (both, neither):
         path = tmp_path / "a.jsonl"

@@ -61,9 +61,7 @@ def test_gate_is_not_met_without_scored_replies() -> None:
 
 
 def test_report_names_the_failures() -> None:
-    wrong_router = LanguageResult(
-        case(Lang.ROMAN_UR, "kya price hai?"), Lang.MIXED, ROMAN_UR_REPLY
-    )
+    wrong_router = LanguageResult(case(Lang.ROMAN_UR, "kya price hai?"), Lang.MIXED, ROMAN_UR_REPLY)
     wrong_reply = LanguageResult(case(Lang.EN, "price?"), Lang.EN, ROMAN_UR_REPLY)
 
     text = language.format_report([wrong_router, wrong_reply])

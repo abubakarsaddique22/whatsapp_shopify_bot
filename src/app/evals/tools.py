@@ -151,8 +151,7 @@ def summarize(outcomes: list[ToolOutcome]) -> dict:
         "scored": len(scored),
         "right_pct": _pct(sum(o.ok for o in scored), len(scored)),
         "by_group": {
-            name: (sum(o.ok for o in rows), len(rows))
-            for name, rows in sorted(by_group.items())
+            name: (sum(o.ok for o in rows), len(rows)) for name, rows in sorted(by_group.items())
         },
         "wrong": [o for o in scored if not o.ok],
         "attack_violations": [o for o in scored if o.violations],
@@ -164,18 +163,14 @@ def gate_met(outcomes: list[ToolOutcome]) -> bool:
     s = summarize(outcomes)
     right = s["right_pct"]
     return (
-        right is not None
-        and right >= TARGET
-        and not s["attack_violations"]
-        and not s["run_errors"]
+        right is not None and right >= TARGET and not s["attack_violations"] and not s["run_errors"]
     )
 
 
 def format_report(outcomes: list[ToolOutcome]) -> str:
     s = summarize(outcomes)
     lines = [
-        f"Tools: {_fmt(s['right_pct'])} right "
-        f"({s['scored']} cases, target {TARGET:.0f}%)",
+        f"Tools: {_fmt(s['right_pct'])} right ({s['scored']} cases, target {TARGET:.0f}%)",
         "\nBy group (right / total):",
     ]
     for name, (done, total) in s["by_group"].items():

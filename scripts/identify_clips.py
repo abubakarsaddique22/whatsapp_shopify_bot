@@ -37,16 +37,42 @@ CLASSES = {"urdu": "ur", "punjabi": "pa", "english": "en", "mixed": "mx"}
 # What each of the 8 questions is about, in every script Whisper may return (Latin, Urdu script,
 # Devanagari). Lower case.
 TOPICS: dict[int, tuple[str, ...]] = {
-    1: ("rolex", "submariner", "رولیکس", "رولکس", "سب میرینر", "سبمیرینر", "price", "پرائس",
-        "قیمت", "bhaa", "بھا", "रोलेक्स", "प्राइस"),
+    1: (
+        "rolex",
+        "submariner",
+        "رولیکس",
+        "رولکس",
+        "سب میرینر",
+        "سبمیرینر",
+        "price",
+        "پرائس",
+        "قیمت",
+        "bhaa",
+        "بھا",
+        "रोलेक्स",
+        "प्राइस",
+    ),
     2: ("casio", "کیسیو", "کاسیو", "colour", "color", "کلر", "رنگ", "rang", "कैसियो", "रंग"),
     3: ("stock", "اسٹاک", "سٹاک", "available", "موجود", "स्टॉक", "मौजूद"),
     4: ("delivery", "ڈیلیوری", "ڈلیوری", "ڈیلیوری", "days", "din", "दिन", "डिलीवरी"),
     5: ("return", "refund", "ریفنڈ", "wapas", "wapis", "واپس", "وапس", "वापस", "पसंद"),
     6: ("picture", "پکچر", "تصویر", "tasveer", "तस्वीर", "पिक्चर"),
     7: ("thousand", "hazar", "ہزار", "10000", "دس", "under", "हज़ार", "हजार"),
-    8: ("person", "banda", "بندہ", "insaan", "انسان", "support", "سپورٹ", "baat", "بات",
-        "gal karni", "گل", "बात", "इंसान"),
+    8: (
+        "person",
+        "banda",
+        "بندہ",
+        "insaan",
+        "انسان",
+        "support",
+        "سپورٹ",
+        "baat",
+        "بات",
+        "gal karni",
+        "گل",
+        "बात",
+        "इंसान",
+    ),
 }
 # Words that only the MIXED sentence of a question has (English words inside an Urdu sentence).
 MIXED: dict[int, tuple[str, ...]] = {
@@ -59,11 +85,52 @@ MIXED: dict[int, tuple[str, ...]] = {
     7: ("thousand", "ٹین", "تھاؤزنڈ", "تھاوزنڈ", "good", "گڈ"),
     8: ("customer", "support", "کسٹمر", "سپورٹ"),
 }
-PUNJABI = ("دا", "دی", "وچ", "کہڑے", "کیہڑے", "ملدی", "ہنے", "کنے", "لگدے", "جے", "آوے", "مینوں",
-           "مینو", "دیو", "چنگی", "نال", "گل", "بندہ", "da", "vich", "kehre", "mildi", "hune",
-           "kinne", "lagde", "aave", "menu", "deo", "changi", "naal", "gal", "banda")
-ENGLISH = ("what", "which", "does", "how many", "can i", "please send", "do you", "i would",
-           "is this", "the ")
+PUNJABI = (
+    "دا",
+    "دی",
+    "وچ",
+    "کہڑے",
+    "کیہڑے",
+    "ملدی",
+    "ہنے",
+    "کنے",
+    "لگدے",
+    "جے",
+    "آوے",
+    "مینوں",
+    "مینو",
+    "دیو",
+    "چنگی",
+    "نال",
+    "گل",
+    "بندہ",
+    "da",
+    "vich",
+    "kehre",
+    "mildi",
+    "hune",
+    "kinne",
+    "lagde",
+    "aave",
+    "menu",
+    "deo",
+    "changi",
+    "naal",
+    "gal",
+    "banda",
+)
+ENGLISH = (
+    "what",
+    "which",
+    "does",
+    "how many",
+    "can i",
+    "please send",
+    "do you",
+    "i would",
+    "is this",
+    "the ",
+)
 URDU_GRAMMAR = (" ki ", " ka ", " ke ", " hai", " kya", " mein", " karni", " dein", " se ")
 
 
@@ -193,7 +260,9 @@ def main() -> int:
             print(f"{'':<46} {'':<6} {'':<9} ({g.reason})")
     unclear = [n for n, g in guesses.items() if g.slot == "?"]
     missing = sorted(
-        f"{c}-{i:02d}" for c in CLASSES.values() for i in range(1, 9)
+        f"{c}-{i:02d}"
+        for c in CLASSES.values()
+        for i in range(1, 9)
         if f"{c}-{i:02d}" not in {g.slot for g in guesses.values()}
     )
     print(f"\n{len(guesses) - len(unclear)} of {len(guesses)} matched; unclear: {len(unclear)}")
