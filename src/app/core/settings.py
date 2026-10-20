@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     low_stock_threshold: int = 3
     show_exact_stock: bool = False
     live_stock_cache_seconds: int = 0
+    # the router's answer to the SAME message in the same situation is reused this long (agent/
+    # router.py). 0 = off. Useful during ads (one pre-filled text from many customers).
+    router_cache_seconds: int = 0
 
     # whatsapp
     meta_graph_version: str = ""
@@ -194,6 +197,8 @@ class Settings(BaseSettings):
             raise ValueError("HANDOFF_PAUSE_HOURS must be at least 1")
         if self.owner_hours and not _BUSINESS_HOURS.fullmatch(self.owner_hours):
             raise ValueError("OWNER_HOURS must be empty or look like 10:00-20:00")
+        if not 0 <= self.router_cache_seconds <= 86400:
+            raise ValueError("ROUTER_CACHE_SECONDS must be between 0 and 86400")
         if not 0 <= self.owner_wait_minutes <= 60:
             raise ValueError("OWNER_WAIT_MINUTES must be between 0 and 60")
         if not 1 <= self.owner_reply_pause_minutes <= 1440:

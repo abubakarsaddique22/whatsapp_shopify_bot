@@ -57,6 +57,8 @@ class OpenAICompatChat:
     ) -> None:
         from langchain_openai import ChatOpenAI  # imported here: fake-LLM tests skip the cost
 
+        self.model_name = model  # part of the router cache key (agent/router.py)
+
         self._llm = ChatOpenAI(  # type: ignore
             model=model,
             api_key=api_key,

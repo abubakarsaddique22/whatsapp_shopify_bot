@@ -17,16 +17,27 @@ What happens (Blueprint 6.2 layer 3, 8.2, 8.4):
 5. max_price is checked against the deterministic price parser (Latin script only).
 
 This function never executes a tool. The permission gate decides what an intent may do.
+
+Router cache (ROUTER_CACHE_SECONDS, 0 = off): during an ad many customers send the SAME first
+message (the ad's pre-filled text). The same message in the same situation (same prompt, same
+last language, same product in the conversation, same model) gets the same router answer from
+memory for a while: faster, and fewer calls against the provider's rate limit. Only the router is
+cached, never the reply: price and stock are still looked up live and the composer still writes
+for this customer. The cache lives in the worker's memory only and stores a hash, not the text.
 """
 
+import hashlib
 import json
 import logging
+import time
+from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from app.core.errors import ConfigError, ProviderError, ProviderUnavailable
+from app.core.settings import get_settings
 from app.domain.models import Intent, Lang, RouterOutput
 from app.integrations.llm.base import ChatModel
 from app.language.detect import detect_language, normalize_input
@@ -37,6 +48,40 @@ log = logging.getLogger(__name__)
 PROMPT_PATH = Path(__file__).resolve().parents[3] / "prompts" / "router.md"
 CLOSING_TAG = "</customer_message>"
 MAX_REPAIR_ECHO_CHARS = 1000  # how much of the bad answer is shown back to the model
+MAX_CACHED = 500  # router answers kept in memory (the oldest go first)
+
+_cache: OrderedDict[str, tuple[float, RouterOutput]] = OrderedDict()
+
+
+def clear_router_cache() -> None:
+    _cache.clear()
+
+
+def _cache_key(llm: ChatModel, system: str, user: str) -> str | None:
+    """None for a model without a name (FakeLLM in tests): such a model is never cached."""
+    model = getattr(llm, "model_name", None)
+    if not model:
+        return None
+    return hashlib.sha256(f"{model}\x00{system}\x00{user}".encode()).hexdigest()
+
+
+def _cached(key: str) -> RouterOutput | None:
+    entry = _cache.get(key)
+    if entry is None:
+        return None
+    expires, out = entry
+    if expires < time.monotonic():
+        _cache.pop(key, None)
+        return None
+    _cache.move_to_end(key)
+    return out.model_copy(deep=True)  # every customer gets their own copy
+
+
+def _remember(key: str, out: RouterOutput, seconds: int) -> None:
+    _cache[key] = (time.monotonic() + seconds, out)
+    _cache.move_to_end(key)
+    while len(_cache) > MAX_CACHED:
+        _cache.popitem(last=False)
 
 
 @lru_cache
@@ -157,12 +202,20 @@ async def route_intent_checked(
     )
     user = f"<customer_message>\n{clean.replace(CLOSING_TAG, '')}\n{CLOSING_TAG}"
 
-    try:
-        out = await _ask(llm, system, user)
-    except ProviderUnavailable:
-        return _unclear(hint.language), True
-    if out is None:
-        return _unclear(hint.language), False
+    seconds = get_settings().router_cache_seconds
+    key = _cache_key(llm, system, user) if seconds > 0 else None
+    out = _cached(key) if key else None
+    if out is not None:
+        log.info("router_cache_hit")
+    else:
+        try:
+            out = await _ask(llm, system, user)
+        except ProviderUnavailable:
+            return _unclear(hint.language), True
+        if out is None:
+            return _unclear(hint.language), False  # a failed answer is never cached
+        if key:
+            _remember(key, out, seconds)
     if hint.script == "latin":  # the parser does not read Urdu-script numbers
         out = _check_price(out, clean)
     return out, False
