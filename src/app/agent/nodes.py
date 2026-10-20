@@ -152,6 +152,12 @@ async def gate_node(state: GraphState) -> dict[str, Any]:
     if _only_asks_for_a_language(state):
         # 'English mein bataein': not an unclear message, so it never counts towards a handoff.
         return {"branch": "clarify"}
+    if _voice_probably_misheard(state):
+        # A voice note that sounds off-topic or rude is far more often a misheard word than a
+        # real attack (voice pilot 2026-10-20: Punjabi 'gal karni' was heard like 'gaali'). Ask
+        # to repeat or type, and record NO security event, so an innocent customer gets no strike.
+        log.info("voice_refusal_softened", extra={"intent": out.intent.value})
+        return {"branch": "clarify"}
     update: dict[str, Any] = {"branch": choose_branch(out, state["conversation"])}
     if out.intent is Intent.ABUSE_OR_INJECTION:
         update["security_event"] = "abuse_or_injection"
@@ -573,6 +579,15 @@ def _only_asks_for_a_language(state: GraphState) -> bool:
     )
 
 
+# A voice transcript with these intents is asked again instead of refused (see gate_node).
+VOICE_SOFTENED = frozenset({Intent.ABUSE_OR_INJECTION, Intent.OUT_OF_SCOPE})
+
+
+def _voice_probably_misheard(state: GraphState) -> bool:
+    out = state.get("router")
+    return state.get("source") == "voice" and out is not None and out.intent in VOICE_SOFTENED
+
+
 async def clarify_node(state: GraphState) -> dict[str, Any]:
     """One short question. After MAX_CLARIFICATIONS in a row a person takes over (8.6)."""
     conv = state["conversation"].model_copy(deep=True)
@@ -581,6 +596,8 @@ async def clarify_node(state: GraphState) -> dict[str, Any]:
         return {"response": _reply(state, "language_switched"), "conversation": conv}
     if conv.clarification_count >= MAX_CLARIFICATIONS:
         return await handoff_node(state, reason="repeated_clarification")
+    if _voice_probably_misheard(state):
+        return _clarified(state, conv, "voice_unclear")
 
     variants = _ambiguous_variants(state)
     if variants is not None:  # one product, several colours / options: list them

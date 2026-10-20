@@ -1,1 +1,33 @@
 file,class,reference,intent,noisy
+ur-01.aac,urdu,رولیکس سب میرینر کی پرائس کیا ہے؟,price,no
+ur-02.aac,urdu,کیسیو کی گھڑی کون سے رنگ میں ملتی ہے؟,colors_sizes,no
+ur-03.aac,urdu,کیا یہ گھڑی ابھی اسٹاک میں موجود ہے؟,availability,no
+ur-04.aac,urdu,ڈیلیوری میں کتنے دن لگتے ہیں؟,policy_shipping,no
+ur-05.aac,urdu,اگر گھڑی پسند نہ آئے تو واپس ہو سکتی ہے؟,policy_refund,no
+ur-06.aac,urdu,مجھے اس کی تصویر بھیج دیں۔,image_request,no
+ur-07.aac,urdu,دس ہزار روپے کے اندر کوئی اچھی گھڑی ہے؟,product_search,yes
+ur-08.aac,urdu,مجھے کسی سے بات کرنی ہے، کوئی انسان ہے؟,human_request,yes
+pa-01.aac,punjabi,Rolex Submariner da ki bhaa hai?,price,no
+pa-02.aac,punjabi,Casio kehre rang vich mildi hai?,colors_sizes,no
+pa-03.aac,punjabi,Eh ghadi hune stock vich hai ke nahi?,availability,no
+pa-04.aac,punjabi,Delivery vich kinne din lagde ne?,policy_shipping,no
+pa-05.aac,punjabi,Je ghadi pasand na aave tan wapis ho sakdi hai?,policy_refund,no
+pa-06.aac,punjabi,Menu is di tasveer bhej deo.,image_request,no
+pa-07.aac,punjabi,Das hazar de andar koi changi ghadi hai?,product_search,yes
+pa-08.aac,punjabi,"Menu kise naal gal karni hai, koi banda hai?",human_request,yes
+en-01.aac,english,What is the price of the Rolex Submariner?,price,no
+en-02.aac,english,Which colours does the Casio watch come in?,colors_sizes,no
+en-03.aac,english,Is this watch available in stock right now?,availability,no
+en-04.aac,english,How many days does delivery take?,policy_shipping,no
+en-05.aac,english,Can I return the watch if I don't like it?,policy_refund,no
+en-06.aac,english,Please send me a picture of this watch.,image_request,no
+en-07.aac,english,Do you have a good watch under ten thousand rupees?,product_search,yes
+en-08.aac,english,I would like to speak to a real person.,human_request,yes
+mx-01.aac,mixed,Rolex Submariner ki price kya hai please?,price,no
+mx-02.aac,mixed,Casio watch ka black colour available hai?,colors_sizes,no
+mx-03.aac,mixed,Yeh watch stock mein hai ya out of stock?,availability,no
+mx-04.aac,mixed,Delivery kitne days mein aa jati hai?,policy_shipping,no
+mx-05.aac,mixed,Agar watch pasand na aaye to refund mil jata hai?,policy_refund,no
+mx-06.aac,mixed,Is watch ki picture send kar dein.,image_request,no
+mx-07.aac,mixed,Ten thousand ke andar koi good watch hai?,product_search,yes
+mx-08.aac,mixed,Mujhe customer support se baat karni hai.,human_request,yes

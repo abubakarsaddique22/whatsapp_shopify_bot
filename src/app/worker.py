@@ -181,6 +181,7 @@ async def voice_outcome(media_id: str, settings: Settings) -> VoiceOutcome:
         min_confidence=settings.stt_min_confidence,
         language_hint=settings.stt_language_hint.strip() or None,
         allowed_languages=settings.stt_allowed_language_set,
+        retry_language=settings.stt_retry_language.strip() or None,
         prepare=dev_prepared_audio if is_dev_note else prepared_audio,
     )
 

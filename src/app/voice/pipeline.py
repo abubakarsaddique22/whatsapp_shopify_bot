@@ -11,7 +11,8 @@
 Order of work (blueprint 6.4, 6.8, 6.9):
 1. prepared_audio: download + ffmpeg to WAV. The audio exists only inside this block.
 2. check_audio_limits: too long or too big is refused BEFORE the speech provider is called.
-3. stt.transcribe.
+3. stt.transcribe (once more with STT_RETRY_LANGUAGE when Whisper names a language we do not
+   serve, see transcribe_with_retry).
 4. The audio is already deleted here. check_transcript decides: go on, or ask again.
 
 What happens to errors:
@@ -37,6 +38,7 @@ from app.voice.gate import (
     GateReason,
     check_audio_limits,
     check_transcript,
+    normalize_language,
     words_of,
 )
 
@@ -71,6 +73,33 @@ class VoiceOutcome:
         return self.transcript is not None
 
 
+async def transcribe_with_retry(
+    stt: SpeechToTextProvider,
+    wav_path: Path,
+    *,
+    language_hint: str | None = None,
+    allowed_languages: frozenset[str] = ALLOWED_LANGUAGES,
+    retry_language: str | None = None,
+) -> TranscriptionResult:
+    """Transcribe; if Whisper names a language we do not serve, transcribe ONCE more with
+    `retry_language` (for example 'ur').
+
+    Found in the voice pilot (2026-10-20, 32 clips of Pakistani speakers, no language hint):
+    Whisper's own language guess was wrong now and then (Punjabi heard as 'Tagalog', English with
+    a local accent as 'Bengali'), and such text is useless to the router. Telling Whisper the
+    language on the second try gives readable Urdu-script text. A first try with a hint, or a
+    language we serve, is never repeated, so this costs one extra call only when it is needed.
+    """
+    result = await stt.transcribe(wav_path, language_hint)
+    if language_hint or not retry_language:
+        return result
+    language = normalize_language(result.language)
+    if language is None or language in allowed_languages:
+        return result
+    log.info("voice_language_retry detected=%s retry=%s", result.language, retry_language)
+    return await stt.transcribe(wav_path, retry_language)
+
+
 async def transcribe_voice_note(
     media_id: str,
     stt: SpeechToTextProvider,
@@ -81,6 +110,7 @@ async def transcribe_voice_note(
     min_confidence: float,
     language_hint: str | None = None,
     allowed_languages: frozenset[str] = ALLOWED_LANGUAGES,
+    retry_language: str | None = None,
     prepare: Prepare = prepared_audio,  # tests pass a fake, so no network and no ffmpeg
 ) -> VoiceOutcome:
     duration_s = 0.0
@@ -92,7 +122,13 @@ async def transcribe_voice_note(
             if not limits.ok:
                 return VoiceOutcome(reason=limits.reason)
             duration_s = audio.duration_s
-            result = await stt.transcribe(audio.wav_path, language_hint)
+            result = await transcribe_with_retry(
+                stt,
+                audio.wav_path,
+                language_hint=language_hint,
+                allowed_languages=allowed_languages,
+                retry_language=retry_language,
+            )
     except MediaTooLarge:
         return VoiceOutcome(reason=GateReason.TOO_LARGE)
     except AudioConversionError:

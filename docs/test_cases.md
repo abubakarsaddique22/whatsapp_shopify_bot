@@ -18,7 +18,7 @@ Types: U unit, I integration (fakes), E evaluation set (real model), A adversari
 | T10 | Urdu voice message | I, E | 6 | 1 in `tests/integration/test_worker_voice.py` | evals/voice_manifest.csv (scripts/bakeoff.py) | voice bake-off not run: evals/voice_manifest.csv has no clips yet (Phase 6 Step 6) |
 | T11 | Punjabi voice message | E | 6 | 2 in `tests/integration/test_worker_voice.py` | evals/voice_manifest.csv (scripts/bakeoff.py) | voice bake-off not run: evals/voice_manifest.csv has no clips yet (Phase 6 Step 6); the Punjabi decision is still open |
 | T12 | English voice message | I, E | 6 | 1 in `tests/integration/test_worker_voice.py` | evals/voice_manifest.csv (scripts/bakeoff.py) | voice bake-off not run: evals/voice_manifest.csv has no clips yet (Phase 6 Step 6) |
-| T13 | Ambiguous product query | I, E | 3, 9 | 4 in `tests/integration/test_graph_flow.py`, `tests/integration/test_search.py`, `tests/integration/test_tools.py` | evals/natural_qa.jsonl (run_eval.py --set natural) | - |
+| T13 | Ambiguous product query | I, E | 3, 9 | 5 in `tests/integration/test_graph_flow.py`, `tests/integration/test_search.py`, `tests/integration/test_tools.py` | evals/natural_qa.jsonl (run_eval.py --set natural) | - |
 | T14 | Shopify returns no matching product | I | 3 | 4 in `tests/integration/test_search.py`, `tests/integration/test_tools.py` | - | - |
 | T15 | Shopify API temporarily unavailable | I | 3, 9 | 5 in `tests/drills/test_failure_drills.py`, `tests/integration/test_graph_flow.py`, `tests/integration/test_tools.py` | - | - |
 | T16 | A webhook event is delivered twice (WhatsApp and Shopify) | I | 4, 10 | 2 in `tests/integration/test_sync_events.py`, `tests/integration/test_whatsapp_webhook.py` | run_eval.py --set duplicates (t16_webhook_twice + chaos scenarios) | - |
@@ -136,6 +136,7 @@ Expected: One clarifying question naming candidates; no guessing.
 - `tests/integration/test_graph_flow.py::test_t13_the_answer_to_the_question_is_looked_up_without_a_new_guess`
 - `tests/integration/test_tools.py::test_t13_ambiguous_search_returns_candidates_and_no_price`
 - `tests/integration/test_search.py::test_t13_close_matches_are_ambiguous_and_name_the_candidates`
+- `tests/integration/test_search.py::test_t13_a_title_inside_another_title_is_not_guessed_with_the_typo_rule`
 
 ### T14: Shopify returns no matching product
 

@@ -19,7 +19,7 @@ from app.core.errors import (
 from app.integrations.speech.fake_stt import FakeSTT, fake_result
 from app.voice.convert import PreparedAudio
 from app.voice.gate import GateReason
-from app.voice.pipeline import VoiceOutcome, transcribe_voice_note
+from app.voice.pipeline import VoiceOutcome, transcribe_voice_note, transcribe_with_retry
 
 WAV = Path("note.wav")
 GOOD = "iski price kya hai"
@@ -188,3 +188,48 @@ async def test_a_provider_failure_is_raised_and_the_audio_is_still_deleted() -> 
     with pytest.raises(TranscriptionError):
         await run(FakeSTT([TranscriptionError("boom")]), events)
     assert events == ["open", "closed"]
+
+
+# ---- second try with a language hint (voice pilot 2026-10-20)
+
+
+async def test_a_language_we_do_not_serve_is_transcribed_again_with_the_retry_language() -> None:
+    stt = FakeSTT([fake_result("Minues Ditas Wheels", language="tagalog"), "is ki tasveer"])
+    result = await transcribe_with_retry(stt, WAV, retry_language="ur")
+    assert result.text == "is ki tasveer"
+    assert [hint for _, hint in stt.calls] == [None, "ur"]
+
+
+async def test_a_served_language_is_not_transcribed_twice() -> None:
+    stt = FakeSTT([fake_result(GOOD, language="urdu")])
+    result = await transcribe_with_retry(stt, WAV, retry_language="ur")
+    assert result.text == GOOD and len(stt.calls) == 1
+
+
+async def test_without_a_retry_language_nothing_changes() -> None:
+    stt = FakeSTT([fake_result(GOOD, language="fr")])
+    assert (await transcribe_with_retry(stt, WAV)).language == "fr"
+    assert len(stt.calls) == 1
+
+
+async def test_a_first_try_with_a_hint_is_not_repeated() -> None:
+    stt = FakeSTT([fake_result(GOOD, language="fr")])
+    await transcribe_with_retry(stt, WAV, language_hint="en", retry_language="ur")
+    assert [hint for _, hint in stt.calls] == ["en"]
+
+
+async def test_the_pipeline_uses_the_retry_and_passes_the_gate() -> None:
+    events: list[str] = []
+    stt = FakeSTT([fake_result(GOOD, language="bengali"), fake_result(GOOD, language="urdu")])
+    outcome = await transcribe_voice_note(
+        "MEDIA1",
+        stt,
+        max_bytes=5_000_000,
+        max_seconds=90,
+        min_words=2,
+        min_confidence=0.5,
+        retry_language="ur",
+        prepare=fake_prepare(events),  # type: ignore[arg-type]
+    )
+    assert outcome.ok and len(stt.calls) == 2
+    assert events == ["open", "closed"]  # both tries ran while the audio existed, then it was gone

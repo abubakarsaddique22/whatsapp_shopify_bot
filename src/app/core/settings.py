@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     # Language hint sent to Whisper (for example ur). Empty = Whisper detects the language itself.
     # A fixed hint makes English voice notes worse, so keep it empty unless the bake-off says so.
     stt_language_hint: str = ""
+    # When Whisper (no hint) names a language not in STT_ALLOWED_LANGUAGES, transcribe once more
+    # with this language (for example ur). Empty = off. Voice pilot 2026-10-20: Punjabi came back
+    # as 'Tagalog' and accented English as 'Bengali' without a hint.
+    stt_retry_language: str = ""
     # A short text sent to Whisper as its `prompt`: it nudges the spelling (Latin script instead of
     # Devanagari, product names like GA-2100). Write it like the customers talk, for example:
     # "GA-2100 ki price kya hai? Black wali watch available hai? Rolex, Casio, G-Shock."

@@ -198,6 +198,7 @@ CASES: dict[str, Case] = {
             f"{GRAPH}::test_t13_the_answer_to_the_question_is_looked_up_without_a_new_guess",
             f"{TOOLS}::test_t13_ambiguous_search_returns_candidates_and_no_price",
             f"{SEARCH}::test_t13_close_matches_are_ambiguous_and_name_the_candidates",
+            f"{SEARCH}::test_t13_a_title_inside_another_title_is_not_guessed_with_the_typo_rule",
         ),
         evals=("evals/natural_qa.jsonl (run_eval.py --set natural)",),
     ),

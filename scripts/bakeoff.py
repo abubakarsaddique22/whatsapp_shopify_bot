@@ -43,6 +43,7 @@ from app.integrations.speech.base import SpeechToTextProvider
 from app.integrations.speech.groq_stt import GroqSTT
 from app.voice.convert import convert_to_wav
 from app.voice.gate import check_transcript
+from app.voice.pipeline import transcribe_with_retry
 from app.voice.scoring import ClipResult, build_result, format_report, summarize
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,7 +100,12 @@ def build_providers(specs: str, settings: Settings) -> list[Provider]:
             raise ConfigError("Set STT_API_KEY in .env (the Groq key is fine)")
         model = model or settings.stt_model
         providers.append(
-            (f"groq:{model}", GroqSTT(key, model, float(settings.stt_timeout_seconds)))
+            (
+                f"groq:{model}",
+                GroqSTT(
+                    key, model, float(settings.stt_timeout_seconds), prompt=settings.stt_prompt
+                ),
+            )
         )
     if not providers:
         raise ConfigError("--providers is empty")
@@ -127,12 +133,22 @@ async def _one(
     llm: ChatModel | None,
 ) -> ClipResult:
     try:
-        result = await stt.transcribe(wav, None)  # no language hint, like the real bot
+        # exactly like the bot: the same hint, retry language and prompt from .env
+        result = await transcribe_with_retry(
+            stt,
+            wav,
+            language_hint=settings.stt_language_hint.strip() or None,
+            allowed_languages=settings.stt_allowed_language_set,
+            retry_language=settings.stt_retry_language.strip() or None,
+        )
     except TranscriptionError as exc:
         return _failed(row, label, exc.message)
 
     decision = check_transcript(
-        result, min_words=settings.stt_min_words, min_confidence=settings.stt_min_confidence
+        result,
+        min_words=settings.stt_min_words,
+        min_confidence=settings.stt_min_confidence,
+        allowed_languages=settings.stt_allowed_language_set,
     )
     intent_got: str | None = None
     if llm is not None:
@@ -199,6 +215,13 @@ async def run(args: argparse.Namespace) -> int:
         return 1
 
     providers = build_providers(args.providers, settings)
+    print(
+        "Settings used (same as the bot): "
+        f"STT_ALLOWED_LANGUAGES={settings.stt_allowed_languages} "
+        f"STT_LANGUAGE_HINT={settings.stt_language_hint or '-'} "
+        f"STT_RETRY_LANGUAGE={settings.stt_retry_language or '-'} "
+        f"STT_PROMPT={'set' if settings.stt_prompt.strip() else '-'}\n"
+    )
     llm = get_eval_chat_model(settings) if args.router else None  # eval -> Ollama
 
     results: list[ClipResult] = []
