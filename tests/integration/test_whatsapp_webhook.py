@@ -275,6 +275,44 @@ async def test_failed_status_marks_the_outbox_row(
     assert "131031" in row.last_error
 
 
+async def test_an_owner_reply_from_the_business_app_silences_the_bot_for_that_customer(
+    client: httpx.AsyncClient, session: AsyncSession
+) -> None:
+    """P8: Meta sends the owner's WhatsApp Business app message as smb_message_echoes."""
+    echo_wamid = new_wamid()
+    body = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "field": "smb_message_echoes",
+                        "value": {
+                            "messaging_product": "whatsapp",
+                            "message_echoes": [
+                                {
+                                    "from": "923000000000",
+                                    "to": WA_ID,
+                                    "id": echo_wamid,
+                                    "timestamp": "1760169600",
+                                    "type": "text",
+                                    "text": {"body": "Ji, main dekhta hoon"},
+                                }
+                            ],
+                        },
+                    }
+                ]
+            }
+        ],
+    }
+    assert (await post(client, body)).status_code == 200
+
+    assert await inbox_rows(session, echo_wamid) == []  # not a customer message
+    result = await session.execute(select(Conversation.id).where(Conversation.wa_id == WA_ID))
+    state = await repo.load_state(session, result.scalar_one())
+    assert state.owner_active_until is not None
+
+
 async def test_body_that_is_not_json_is_ignored_with_200(client: httpx.AsyncClient) -> None:
     raw = b"this is not json"
     headers = {"X-Hub-Signature-256": sign_whatsapp(raw, SECRET)}

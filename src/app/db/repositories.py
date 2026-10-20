@@ -118,6 +118,26 @@ async def get_or_create_conversation(session: AsyncSession, wa_id: str, wa_id_ha
     return (await session.execute(stmt)).scalar_one()
 
 
+async def conversation_for_owner_reply(session: AsyncSession, wa_id: str, wa_id_hash: str) -> int:
+    """Conversation id for a customer the OWNER wrote to (P8). Unlike get_or_create_conversation
+    it does not touch last_inbound_at: an owner message does not open a 24-hour window."""
+    await session.execute(
+        insert(Conversation)
+        .values(wa_id=wa_id, wa_id_hash=wa_id_hash, state={})
+        .on_conflict_do_nothing(index_elements=["wa_id"])
+    )
+    result = await session.execute(select(Conversation.id).where(Conversation.wa_id == wa_id))
+    return result.scalar_one()
+
+
+async def is_our_outbound(session: AsyncSession, wamid: str) -> bool:
+    """True if this wamid belongs to a reply the bot itself sent (not an owner message)."""
+    result = await session.execute(
+        select(WhatsAppOutbox.id).where(WhatsAppOutbox.wamid == wamid).limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def add_inbox(
     session: AsyncSession, conversation_id: int, wa_id_hash: str, msg: InboundMessage
 ) -> int | None:
@@ -159,17 +179,23 @@ async def mark_outbox_failed_by_wamid(
 # transaction rolls back and the row is still 'pending', so nothing is ever stuck half-done.
 
 
-async def claim_inbox(session: AsyncSession) -> WhatsAppInbox | None:
+async def claim_inbox(
+    session: AsyncSession, received_before: datetime | None = None
+) -> WhatsAppInbox | None:
     """Oldest pending inbound message. SKIP LOCKED: two workers never take the same row.
+
+    `received_before` (P8 owner first): only messages that arrived before this moment; newer ones
+    wait, so the owner can answer them first from the WhatsApp Business app.
 
     populate_existing: record_inbox_failure updates `attempts` with synchronize_session=False,
     so a session that already holds this row would hand back the stale count. The voice path
     needs the real count to know the LAST try (worker.handle_voice). Same fix as claim_outbox.
     """
+    query = select(WhatsAppInbox).where(WhatsAppInbox.status == "pending")
+    if received_before is not None:
+        query = query.where(WhatsAppInbox.received_at <= received_before)
     result = await session.execute(
-        select(WhatsAppInbox)
-        .where(WhatsAppInbox.status == "pending")
-        .order_by(WhatsAppInbox.id)
+        query.order_by(WhatsAppInbox.id)
         .limit(1)
         .with_for_update(skip_locked=True)
         .execution_options(populate_existing=True)

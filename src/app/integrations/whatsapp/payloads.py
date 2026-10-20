@@ -34,9 +34,22 @@ class StatusUpdate(BaseModel):
     error_code: int | None = None
 
 
+class OwnerEcho(BaseModel):
+    """A message the OWNER sent from the WhatsApp Business app (Coexistence, field
+    smb_message_echoes). Only who it went to and when matter: the bot then stays silent for that
+    customer (owner/presence.py)."""
+
+    wamid: str
+    to_wa_id: str  # the customer the owner wrote to
+    msg_type: str = ""
+    text: str | None = None
+    wa_timestamp: datetime | None = None
+
+
 class ParsedWebhook(BaseModel):
     messages: list[InboundMessage] = []
     statuses: list[StatusUpdate] = []
+    owner_echoes: list[OwnerEcho] = []
 
 
 # ---- Raw Meta shapes (private)
@@ -77,9 +90,18 @@ class _RawStatus(_Raw):
     errors: list[_RawError] = []
 
 
+class _RawEcho(_Raw):
+    id: str
+    to: str
+    type: str = ""
+    timestamp: str | None = None
+    text: _RawText | None = None
+
+
 class _RawValue(_Raw):
     messages: list[_RawMessage] = []
     statuses: list[_RawStatus] = []
+    message_echoes: list[_RawEcho] = []
 
 
 class _RawChange(_Raw):
@@ -152,6 +174,16 @@ def parse_webhook(payload: dict[str, Any]) -> ParsedWebhook:
                         status=s.status,
                         recipient_id=s.recipient_id,
                         error_code=code,
+                    )
+                )
+            for e in change.value.message_echoes:
+                result.owner_echoes.append(
+                    OwnerEcho(
+                        wamid=e.id,
+                        to_wa_id=e.to,
+                        msg_type=e.type,
+                        text=e.text.body if e.text is not None else None,
+                        wa_timestamp=_to_datetime(e.timestamp),
                     )
                 )
     return result

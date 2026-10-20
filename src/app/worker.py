@@ -47,6 +47,7 @@ from app.integrations.llm.chat_factory import get_chat_model
 from app.integrations.speech.factory import get_stt_provider
 from app.integrations.whatsapp.sender import send_one
 from app.language.policy import ReplyLang, reply_language
+from app.owner.presence import OWNER_AWAY_FLAG, hold_cutoff, owner_is_handling
 from app.security.rate_limit import budget_check, check_sender
 from app.security.redaction import CARD_PLACEHOLDER, redact_cards
 from app.voice.convert import prepared_audio
@@ -387,6 +388,13 @@ async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> TurnOutco
     lang = reply_language(conv.language, urdu_script_replies=settings.urdu_script_replies)
     shown = inbox.text or f"[{inbox.msg_type}]"
 
+    # 0. P8: the owner is answering this customer from the WhatsApp Business app: stay silent,
+    # send nothing (a notice would cost money), keep the message for the transcript
+    if owner_is_handling(conv, await repo.db_now(session)):
+        log.info("owner_handling", extra={"inbox_id": inbox.id})
+        await finish_without_model(session, inbox, [], keep=shown)
+        return outcome
+
     # 1. rate limit: ONE polite message, then silence (security/rate_limit.py)
     decision = await check_sender(session, inbox.conversation_id, inbox.wa_id_hash, settings)
     if decision.action != "allow":
@@ -447,12 +455,23 @@ async def handle_inbox(session: AsyncSession, inbox: WhatsAppInbox) -> TurnOutco
     return outcome
 
 
+async def claim_next(session: AsyncSession) -> WhatsAppInbox | None:
+    """The next message to handle. P8 owner first: in owner hours a new message waits
+    OWNER_WAIT_MINUTES, so the owner can answer it from the WhatsApp Business app first."""
+    settings = get_settings()
+    cutoff = None
+    if settings.owner_first:
+        away = await repo.get_flag(session, OWNER_AWAY_FLAG)
+        cutoff = hold_cutoff(settings, await repo.db_now(session), away=away)
+    return await repo.claim_inbox(session, received_before=cutoff)
+
+
 async def process_inbox(sessionmaker: async_sessionmaker[AsyncSession]) -> bool:
     """Process one pending inbound message. Returns False if there was none."""
     correlation_id_var.set(new_correlation_id())  # one id per pass: logs and the trace share it
     outcome: TurnOutcome | None = None
     async with sessionmaker() as session:
-        inbox = await repo.claim_inbox(session)
+        inbox = await claim_next(session)
         if inbox is None:
             return False
         inbox_id = inbox.id

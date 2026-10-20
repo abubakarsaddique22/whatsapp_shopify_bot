@@ -142,6 +142,15 @@ class Settings(BaseSettings):
     business_hours: str = "10:00-20:00"  # local time, HH:MM-HH:MM
     # the time zone of business_hours as an offset from UTC (Pakistan has no summer time: +05:00)
     business_utc_offset: str = "+05:00"
+    # P8 "owner first, bot as backup". Needs WhatsApp Coexistence: the owner answers from the
+    # WhatsApp Business app on the SAME number and Meta sends those replies to the webhook
+    # (smb_message_echoes). Off by default: with OWNER_FIRST=false the bot answers at once.
+    owner_first: bool = False
+    owner_wait_minutes: int = 3  # in owner hours a new message waits this long for the owner
+    owner_hours: str = ""  # HH:MM-HH:MM in BUSINESS_UTC_OFFSET; empty = BUSINESS_HOURS
+    # after an owner reply from the app, the bot stays silent for that customer this long. This
+    # works even with OWNER_FIRST=false: the bot never talks over the owner.
+    owner_reply_pause_minutes: int = 60
     # HANDOFF_CHANNEL=email only (handoff/notifier.py): the mail server that sends the notification.
     # Port 465 = SSL from the start, any other port (587) = STARTTLS. Empty SMTP_FROM = SMTP_USER.
     smtp_host: str = ""
@@ -183,6 +192,12 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name.upper()} must be at least 1")
         if self.handoff_pause_hours < 1:
             raise ValueError("HANDOFF_PAUSE_HOURS must be at least 1")
+        if self.owner_hours and not _BUSINESS_HOURS.fullmatch(self.owner_hours):
+            raise ValueError("OWNER_HOURS must be empty or look like 10:00-20:00")
+        if not 0 <= self.owner_wait_minutes <= 60:
+            raise ValueError("OWNER_WAIT_MINUTES must be between 0 and 60")
+        if not 1 <= self.owner_reply_pause_minutes <= 1440:
+            raise ValueError("OWNER_REPLY_PAUSE_MINUTES must be between 1 and 1440")
         for name in (
             "retention_conversation_days",
             "retention_message_days",

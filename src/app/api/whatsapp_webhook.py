@@ -20,6 +20,7 @@ from app.core.settings import get_settings
 from app.db import repositories
 from app.db.session import get_session
 from app.integrations.whatsapp.payloads import parse_webhook
+from app.owner.presence import record_owner_reply
 
 log = logging.getLogger(__name__)
 security_log = logging.getLogger("security")
@@ -86,6 +87,10 @@ async def receive(
             log.warning("whatsapp_delivery_failed", extra={"meta_code": status.error_code})
             await repositories.mark_outbox_failed_by_wamid(session, status.wamid, status.error_code)
 
+    # P8: the owner answered from the WhatsApp Business app: the bot stays silent for that customer
+    for echo in parsed.owner_echoes:
+        await record_owner_reply(session, echo, settings)
+
     await session.commit()
     log.info(
         "whatsapp_webhook",
@@ -93,6 +98,7 @@ async def receive(
             "messages": len(parsed.messages),
             "new": new_messages,
             "statuses": len(parsed.statuses),
+            "owner_echoes": len(parsed.owner_echoes),
         },
     )
     return {"status": "ok"}
