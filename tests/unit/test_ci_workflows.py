@@ -83,9 +83,11 @@ def test_the_gitleaks_allowlist_stays_narrow() -> None:
     assert "^src/" not in text and "^evals/" not in text
 
 
-def test_the_eval_job_runs_at_night_and_by_hand() -> None:
+def test_the_eval_job_runs_by_hand_and_never_on_a_push() -> None:
+    # nightly schedule taken out 2026-10-20 until the paid Groq plan (no secrets in GitHub yet)
     on = triggers(load("eval.yml"))
-    assert on["schedule"] and "workflow_dispatch" in on
+    assert "workflow_dispatch" in on
+    assert "push" not in on and "pull_request" not in on
 
 
 def test_the_eval_job_gates_on_security_with_the_real_model() -> None:

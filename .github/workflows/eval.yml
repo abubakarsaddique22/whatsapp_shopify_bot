@@ -1,7 +1,9 @@
 name: eval
 
 # Phase 12: the evaluation with the REAL model (Blueprint 11.6: "a separate manual or nightly job").
-# Runs at night and by hand (Actions > eval > Run workflow). It needs, in the repository settings
+# Runs BY HAND only (Actions > eval > Run workflow). The nightly run was taken out on 2026-10-20:
+# without the Groq secrets it would fail every night; put `schedule: - cron: "17 21 * * *"`
+# (02:17 Pakistan time) back under `on:` once the paid Groq plan is there. It needs, in the repository settings
 # (Settings > Secrets and variables > Actions):
 #   secrets:   LLM_API_KEY (Groq), LANGSMITH_API_KEY (optional: the runs become experiments)
 #   variables: ROUTER_MODEL, COMPOSER_MODEL
@@ -9,8 +11,6 @@ name: eval
 # tests/llm) stay on the developer's PC: CI has neither. Groq free tier: keep --delay.
 
 on:
-  schedule:
-    - cron: "17 21 * * *"  # 02:17 in Pakistan (UTC+5), when nobody is testing by hand
   workflow_dispatch:
     inputs:
       langsmith:
