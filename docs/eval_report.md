@@ -87,6 +87,19 @@ answer. The other five are short or misspelt names ("crtr tank white", "Submairn
 
 ## Decisions needed from the client
 
+**Answered 2026-10-20** (docs/WhatsApp-Bot-Client-Jawabat.pdf, details in docs/PROGRESS.md
+"Client decisions"):
+1. Abstention: the third option. The FAQ gets the store's real answers (smart watches: sold;
+   instalments: no; straps: only for some models), then `run_eval.py --set retrieval` again.
+2. Language labels: open; the developer checks the Roman Urdu templates.
+3. Groq paid plan: yes. The Groq runs are pending until the owner says so.
+4. Meta cost: the store's card in Billing Hub; DAILY_COST_BUDGET = Rs 1,000 a day.
+5. Voice: Punjabi stays, an unclear voice note gets "please repeat or type".
+6. Duplicate after a crash: accepted as a known risk.
+7. Filter-only search: show a short list under the price and ask the preference (to build).
+
+The questions as they were asked:
+
 1. **Retrieval abstention gate.** Options:
    - keep 90% and make the composer's "not confirmed" the real check, measured as a judged composer
      eval;
