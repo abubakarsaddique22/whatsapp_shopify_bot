@@ -75,7 +75,11 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
         r"(?:assistant|ai|bot|developer|admin|administrator|dan|jailbroken|unrestricted)\b"
         r"|\b(?:act|behave|respond|reply)\s+as\s+(?:if\s+you\s+(?:are|were)\s+)?(?:an?\s+)?"
         r"(?:\w+\s+){0,2}(?:assistant|ai|bot|developer|admin|administrator|hacker|dan)\b"
-        r"|\bpretend\s+(?:to\s+be|you\s+are)\b"
+        # "pretend you are ..." talks to the model. "pretend to be" only with a role word after it:
+        # a Terms of Service says "you may not ... pretend to be someone other than yourself".
+        r"|\bpretend\s+(?:that\s+)?you\s+(?:are|were)\b"
+        r"|\bpretend\s+to\s+be\s+(?:an?\s+|the\s+)?(?:\w+\s+){0,2}?"
+        r"(?:assistant|ai|bot|developer|admin|administrator|owner|hacker|dan|human|unrestricted)\b"
         r"|\bdeveloper\s+mode\b|\bjailbreak(?:ed)?\b|\bdo\s+anything\s+now\b",
         _FLAGS,
     ),
