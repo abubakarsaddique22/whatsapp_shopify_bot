@@ -31,3 +31,7 @@ picture_colour_missing:  # caption: the colour asked for has no picture of its o
   en: "{title} (I do not have a {colour} picture, this is the main picture)"
   roman_ur: "{title} ({colour} colour ki apni picture nahi hai, ye main picture hai)"
   en_roman_ur: "{title} (no {colour} picture, this is the main picture / {colour} ki picture nahi, ye main hai)"
+language_switched:  # the customer only asked for a reply language ('English mein bataein'); not counted as unclear
+  en: "Sure, I will reply in English. How can I help you?"
+  roman_ur: "Ji zaroor, ab main Roman Urdu mein jawab doon ga. Bataiye, main kya madad kar sakta hoon?"
+  en_roman_ur: "Sure, I will reply in English. / Ji zaroor, bataiye kya madad chahiye?"

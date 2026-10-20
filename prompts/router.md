@@ -56,7 +56,9 @@ price               price of a watch or of any other product the store sells (bo
                     accessory)
 availability        is it in stock
 colors_sizes        which colours or sizes exist
-specs               dimensions, water resistance, other features
+specs               dimensions, water resistance, other features of the watch itself.
+                    Warranty or guarantee is NOT specs, even for one model: it is a store
+                    promise, so it is faq with kb_query_en
 image_request       wants a picture
 policy_refund       refund, return, exchange
 policy_shipping     delivery time, delivery fee
@@ -166,6 +168,14 @@ Examples (message -> JSON)
   -> {"language":"roman_ur","intent":"policy_shipping","product_query":null,
       "color":null,"size_mm":null,"max_price":null,
       "kb_query_en":"how the customer receives a tracking number",
+      "needs_clarification":false,"confidence":0.85}
+"Does this model come with a guarantee?"
+  -> {"language":"en","intent":"faq","product_query":null,"color":null,"size_mm":null,
+      "max_price":null,"kb_query_en":"watch warranty period",
+      "needs_clarification":false,"confidence":0.85}
+"is ghari pe guarantee kitne time ki milti hai?"
+  -> {"language":"roman_ur","intent":"faq","product_query":null,"color":null,
+      "size_mm":null,"max_price":null,"kb_query_en":"watch warranty period",
       "needs_clarification":false,"confidence":0.85}
 "10k ke andar koi watch hai?"
   -> {"language":"roman_ur","intent":"product_search","product_query":null,"color":null,

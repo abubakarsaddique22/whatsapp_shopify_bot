@@ -65,7 +65,7 @@ from app.domain.models import BotResponse, ConversationState, Intent, RouterOutp
 from app.integrations.embeddings.base import Embedder
 from app.integrations.llm.base import ChatModel
 from app.language.detect import detect_language, normalize_input
-from app.language.policy import next_language, reply_language
+from app.language.policy import asked_language, next_language, reply_language
 
 log = logging.getLogger(__name__)
 
@@ -148,6 +148,9 @@ async def gate_node(state: GraphState) -> dict[str, Any]:
         log.warning("router_unavailable")
         return {"branch": "handoff"}
     if out is None:
+        return {"branch": "clarify"}
+    if _only_asks_for_a_language(state):
+        # 'English mein bataein': not an unclear message, so it never counts towards a handoff.
         return {"branch": "clarify"}
     update: dict[str, Any] = {"branch": choose_branch(out, state["conversation"])}
     if out.intent is Intent.ABUSE_OR_INJECTION:
@@ -555,9 +558,27 @@ def _join_names(names: list[str], lang: str) -> str:
     return ", ".join(names[:-1]) + f" {word} " + names[-1]
 
 
+def _only_asks_for_a_language(state: GraphState) -> bool:
+    """The message asks for a reply language ('English mein bataein') and nothing else.
+
+    The router has no intent for this and says 'unclear'. route_intent_node has already switched
+    the conversation language (policy.asked_language), so the bot only has to say yes. A message
+    with a real question in it ('price batao, English mein') gets another intent and goes on.
+    """
+    out = state.get("router")
+    return (
+        out is not None
+        and out.intent is Intent.UNCLEAR
+        and asked_language(state.get("text", "")) is not None
+    )
+
+
 async def clarify_node(state: GraphState) -> dict[str, Any]:
     """One short question. After MAX_CLARIFICATIONS in a row a person takes over (8.6)."""
     conv = state["conversation"].model_copy(deep=True)
+    if _only_asks_for_a_language(state):
+        conv.clarification_count = 0  # the customer is clear, nothing is unclear any more
+        return {"response": _reply(state, "language_switched"), "conversation": conv}
     if conv.clarification_count >= MAX_CLARIFICATIONS:
         return await handoff_node(state, reason="repeated_clarification")
 

@@ -1,5 +1,5 @@
 # ADR 0003: No mock store; language rules
-Date: 2026-10-15  Status: accepted
+Date: 2026-10-15  Status: accepted; the language part is superseded by ADR 0005 (2026-10-18)
 
 Context: Tests must reflect real data; replies must feel natural for Pakistani customers.
 Decision:

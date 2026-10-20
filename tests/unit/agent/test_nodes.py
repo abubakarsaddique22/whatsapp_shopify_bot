@@ -767,3 +767,28 @@ async def test_two_full_titles_of_the_same_length_stay_a_question(tools, monkeyp
     update = await run_tools_node(state, deps())
     assert tools.calls == []
     assert route_after_tools({**state, **update}) == "clarify"
+
+
+# ---- a message that only asks for a reply language (PROGRESS open item, 2026-10-20)
+
+
+async def test_a_request_for_english_only_is_answered_not_counted_as_unclear():
+    state = turn(
+        Intent.UNCLEAR, text="English mein bataein", conversation=conv(clarification_count=2)
+    )
+    assert (await gate_node(state))["branch"] == "clarify"  # not a handoff at the 3rd 'unclear'
+    update = await clarify_node(state)
+    assert update["response"].response_text.startswith("Sure, I will reply in English")
+    assert not update["response"].needs_clarification
+    assert update["conversation"].clarification_count == 0
+
+
+async def test_a_language_request_with_a_real_question_goes_its_own_way():
+    state = turn(Intent.PRICE, text="English mein bataein, GA-2100 ki price?")
+    assert (await gate_node(state))["branch"] == "product_info"
+
+
+async def test_an_unclear_message_without_a_language_request_still_asks():
+    update = await clarify_node(turn(Intent.UNCLEAR, text="hmm"))
+    assert update["response"].needs_clarification
+    assert update["conversation"].clarification_count == 1

@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.catalog.importer import compute_hash, image_rows, product_row, variant_rows
-from app.catalog.search import MatchKind, search_products
+from app.catalog.search import MatchKind, search_products, title_named_in_text
 from app.core.settings import get_settings
 from app.db import repositories as repo
 from app.domain.catalog import Money, Product, StockState, Variant
@@ -79,6 +79,13 @@ VEXOR_B = plain_product(9007, "Vexor Silver Green Textured - AAA").model_copy(
 # Two products with the very same title: the title alone cannot tell them apart
 DUPE_A = plain_product(9008, "Dupe Watch").model_copy(update={"vendor": "Dupe"})
 DUPE_B = plain_product(9009, "Dupe Watch").model_copy(update={"vendor": "Dupe"})
+# Like the real 'RLX - Submariner Rubber - ...' family: one title per colour, typed with a typo
+KRELIX_GREEN = plain_product(
+    9010, "Krelix - Navigator Rubber - Green Hulk - AAA Quality"
+).model_copy(update={"vendor": "Krelix"})
+KRELIX_GOLD = plain_product(
+    9011, "Krelix - Navigator Rubber - Gold Black - AAA Quality"
+).model_copy(update={"vendor": "Krelix"})
 
 
 @pytest.fixture
@@ -98,6 +105,8 @@ async def session() -> AsyncIterator[AsyncSession]:
                 VEXOR_B,
                 DUPE_A,
                 DUPE_B,
+                KRELIX_GREEN,
+                KRELIX_GOLD,
             ):
                 await repo.upsert_product(
                     db,
@@ -212,6 +221,20 @@ async def test_part_of_a_title_with_colour_words_still_lists_both_products(sessi
     titles = [c.title for c in result.candidates]
     assert VEXOR_A.title in titles
     assert VEXOR_B.title in titles
+
+
+async def test_a_full_title_with_a_typo_still_names_that_product(session):
+    # eval nat-typo-price-15 (2026-10-20): 'Submairner' made the bot price another product
+    message = "price of Krelix - Navigatr Rubber - Green Hulk - AAA Quality?"
+    assert await title_named_in_text(session, message) == KRELIX_GREEN.title
+
+
+async def test_part_of_a_title_family_is_not_guessed(session):
+    assert await title_named_in_text(session, "krelix navigator rubber price?") is None
+
+
+async def test_t13_a_title_inside_another_title_is_not_guessed_with_the_typo_rule(session):
+    assert await title_named_in_text(session, "zorbex tide ka price?") is None
 
 
 async def test_two_products_with_the_same_title_stay_ambiguous(session):

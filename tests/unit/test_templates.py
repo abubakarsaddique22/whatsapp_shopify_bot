@@ -25,6 +25,7 @@ KINDS = {
     "card_warning",
     "bot_trouble",
     "voice_unavailable",
+    "language_switched",
 }
 
 

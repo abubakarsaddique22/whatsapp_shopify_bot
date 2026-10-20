@@ -107,8 +107,36 @@ _NAMED_SQL = text(
     """
 )
 
+# A title written with a small typo ('RLX - Submairner Rubber - Green Hulk - AAA Quality'): the
+# exact match above misses it, and the router then 'corrects' RLX to Rolex and drops 'Rubber Green
+# Hulk', so the wrong product was priced (eval nat-typo-price-15, 2026-10-20). pg_trgm
+# word_similarity(title, message) = how much of the title is in the message. Same safety rule as
+# above: a title that is part of another title never counts ('zorbex tide', T13).
+_FUZZY_NAMED_SQL = text(
+    """
+    WITH p AS (
+        SELECT title,
+               trim(regexp_replace(lower(title), '[^a-z0-9]+', ' ', 'g')) AS t
+        FROM products_mirror
+        WHERE is_visible
+    )
+    SELECT title, t AS norm, word_similarity(t, CAST(:msg AS text)) AS score
+    FROM p
+    WHERE t <> ''
+      AND (SELECT count(*) FROM p AS other
+           WHERE strpos(' ' || other.t || ' ', ' ' || p.t || ' ') > 0) = 1
+    ORDER BY score DESC, length(t) DESC
+    LIMIT 5
+    """
+)
+
 MIN_NAMED_WORDS = 2  # a one-word title ('Watch') would be 'found' in almost any message
 MIN_NAMED_CHARS = 8
+# Measured 2026-10-20 on the real titles: one typo in a full title scores 0.83, the nearest other
+# title 0.52; 'zorbex tide' against 'Zorbex Tide Ultra' 0.67; 'rlx branded premium' 0.87 against
+# 0.73 for 'AP Branded Premium Box' (stays a question: the lead is too small).
+FUZZY_MIN_SCORE = 0.8
+FUZZY_LEAD = 0.15  # the best title must lead the next one by this much
 
 
 async def title_named_in_text(session: AsyncSession | None, message: str) -> str | None:
@@ -124,13 +152,26 @@ async def title_named_in_text(session: AsyncSession | None, message: str) -> str
     if not normalized:
         return None
     rows = (await session.execute(_NAMED_SQL, {"msg": f" {normalized} "})).all()
-    rows = [
-        r for r in rows if len(r.norm.split()) >= MIN_NAMED_WORDS and len(r.norm) >= MIN_NAMED_CHARS
-    ]
-    if not rows:
+    rows = [r for r in rows if _long_enough(r.norm)]
+    if rows:
+        longest = [r for r in rows if len(r.norm) == len(rows[0].norm)]
+        return str(longest[0].title) if len(longest) == 1 else None
+    return await _title_named_with_a_typo(session, normalized)
+
+
+def _long_enough(norm: str) -> bool:
+    return len(norm.split()) >= MIN_NAMED_WORDS and len(norm) >= MIN_NAMED_CHARS
+
+
+async def _title_named_with_a_typo(session: AsyncSession, normalized: str) -> str | None:
+    """Almost the whole title is in the message, and clearly more than any other title."""
+    rows = (await session.execute(_FUZZY_NAMED_SQL, {"msg": f" {normalized} "})).all()
+    rows = [r for r in rows if _long_enough(r.norm)]
+    if not rows or rows[0].score < FUZZY_MIN_SCORE:
         return None
-    longest = [r for r in rows if len(r.norm) == len(rows[0].norm)]
-    return str(longest[0].title) if len(longest) == 1 else None
+    if len(rows) > 1 and rows[0].score - rows[1].score < FUZZY_LEAD:
+        return None
+    return str(rows[0].title)
 
 
 class MatchKind(StrEnum):
