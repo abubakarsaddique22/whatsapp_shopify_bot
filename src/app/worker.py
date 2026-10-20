@@ -43,7 +43,7 @@ from app.handoff.notifier import notify_owner, notify_pending
 from app.handoff.service import after_hours_note, create_handoff, is_paused, resume_if_expired
 from app.integrations.embeddings.factory import warm_up
 from app.integrations.llm.base import ChatModel
-from app.integrations.llm.chat_factory import get_chat_model
+from app.integrations.llm.chat_factory import get_chat_model, start_token_count
 from app.integrations.speech.factory import get_stt_provider
 from app.integrations.whatsapp.sender import send_one
 from app.language.policy import ReplyLang, reply_language
@@ -133,6 +133,7 @@ async def graph_reply(
     if correlation_id == "-":  # not inside a worker pass (tests, scripts)
         correlation_id = new_correlation_id()
     graph = build_graph(deps, _checkpointer)
+    tokens = start_token_count()  # model calls and tokens of this turn, for the log line
     state = await run_turn(
         graph,
         conversation_id,
@@ -141,7 +142,7 @@ async def graph_reply(
         source=source,
         correlation_id=correlation_id,
     )
-    log.info("turn_done", extra=turn_summary(state))
+    log.info("turn_done", extra={**turn_summary(state), **tokens})
     return to_replies(state)
 
 

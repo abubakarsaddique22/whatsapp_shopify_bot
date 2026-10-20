@@ -13,7 +13,8 @@ LLM_PROVIDER decides what you get:
 Ollama is used only for the eval: see get_eval_chat_model() at the bottom (OLLAMA_BASE_URL).
 """
 
-from typing import Literal
+from contextvars import ContextVar
+from typing import Any, Literal
 
 from pydantic import SecretStr
 
@@ -25,6 +26,27 @@ from app.integrations.llm.fake_llm import FakeLLM
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"  # VERIFY against Groq's current docs
 
 Role = Literal["router", "composer"]
+
+# P1 (paid Groq): the tokens of one customer turn, for the worker's turn_done log line, so the
+# real cost per message can be measured (COST_PER_TEXT_MESSAGE is an estimate until then).
+_turn_tokens: ContextVar[dict[str, int] | None] = ContextVar("turn_tokens", default=None)
+
+
+def start_token_count() -> dict[str, int]:
+    """Start counting for one turn. The returned dict fills up as the model is called."""
+    counts = {"llm_calls": 0, "tokens_in": 0, "tokens_out": 0}
+    _turn_tokens.set(counts)
+    return counts
+
+
+def _count_tokens(response: Any) -> None:
+    counts = _turn_tokens.get()
+    if counts is None:  # nobody is counting (CLI, eval)
+        return
+    usage = getattr(response, "usage_metadata", None) or {}
+    counts["llm_calls"] += 1
+    counts["tokens_in"] += int(usage.get("input_tokens") or 0)
+    counts["tokens_out"] += int(usage.get("output_tokens") or 0)
 
 
 class OpenAICompatChat:
@@ -56,6 +78,7 @@ class OpenAICompatChat:
                     "status_code": getattr(exc, "status_code", None),
                 },
             ) from None
+        _count_tokens(response)
         text = response.content
         if not isinstance(text, str) or not text.strip():
             raise ProviderUnavailable("llm returned no text")

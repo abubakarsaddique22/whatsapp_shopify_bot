@@ -8,7 +8,12 @@ from pydantic import SecretStr
 
 from app.core.errors import ConfigError, ProviderError
 from app.core.settings import Settings
-from app.integrations.llm.chat_factory import GROQ_BASE_URL, OpenAICompatChat, get_chat_model
+from app.integrations.llm.chat_factory import (
+    GROQ_BASE_URL,
+    OpenAICompatChat,
+    get_chat_model,
+    start_token_count,
+)
 from app.integrations.llm.fake_llm import FakeLLM
 
 KEY = "gsk_test_secret_123"
@@ -83,16 +88,17 @@ def test_groq_url_is_the_openai_compatible_one():
 
 
 class StubLLM:
-    def __init__(self, content=None, error=None):
+    def __init__(self, content=None, error=None, usage=None):
         self.content = content
         self.error = error
+        self.usage = usage
         self.messages = None
 
     async def ainvoke(self, messages):
         self.messages = messages
         if self.error is not None:
             raise self.error
-        return SimpleNamespace(content=self.content)
+        return SimpleNamespace(content=self.content, usage_metadata=self.usage)
 
 
 def make_chat(stub):
@@ -127,6 +133,20 @@ async def test_provider_failure_becomes_provider_error_without_the_key():
     assert KEY not in str(exc) and KEY not in str(exc.detail)
     assert exc.__cause__ is None  # the original message (with the key) is not chained
     assert exc.__suppress_context__
+
+
+async def test_the_tokens_of_a_turn_are_counted_for_the_log_line():
+    counts = start_token_count()
+    chat = make_chat(StubLLM(content="ok", usage={"input_tokens": 1200, "output_tokens": 80}))
+    await chat.complete("sys", "user")
+    await chat.complete("sys", "user")
+    assert counts == {"llm_calls": 2, "tokens_in": 2400, "tokens_out": 160}
+
+
+async def test_a_provider_without_usage_still_counts_the_call():
+    counts = start_token_count()
+    await make_chat(StubLLM(content="ok")).complete("sys", "user")
+    assert counts == {"llm_calls": 1, "tokens_in": 0, "tokens_out": 0}
 
 
 async def test_failure_without_status_code():
