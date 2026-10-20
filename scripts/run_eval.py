@@ -8,6 +8,8 @@ r"""Phase 12: ask the REAL bot every question of an evaluation set and score the
     uv run python scripts\run_eval.py --set duplicates   (T16 + chaos, stop the worker first)
     uv run python scripts\run_eval.py --set latency      (webhook to outbox, stop the worker first)
     uv run python scripts\run_eval.py --all --delay 3    (every gate, one summary at the end)
+    uv run python scripts\run_eval.py --set language --ollama --langsmith
+                                                         (also saved as a LangSmith experiment)
 
 Needs LLM_* and COMPOSER_MODEL in .env, Postgres running (docker compose up -d), the real dev
 store. Nothing is sent to WhatsApp. Every question starts a NEW conversation (state reset, no
@@ -28,6 +30,7 @@ from app.core.errors import ConfigError
 from app.db.session import get_engine, get_sessionmaker
 from app.evals import (
     duplicates,
+    langsmith_sync,
     language,
     latency,
     pipeline,
@@ -55,6 +58,30 @@ ALL_SETS = (
 )
 
 
+def record_if_asked(args: argparse.Namespace, set_name: str, results: list[Any]) -> None:
+    """--langsmith: save this run as a LangSmith experiment (Phase 12 Step 7).
+
+    Never breaks the run: the local report above is the result, the upload is a copy of it.
+    """
+    if not getattr(args, "langsmith", False) or not results:
+        return
+    try:
+        client = langsmith_sync.make_client()
+        rows = langsmith_sync.CONVERTERS[set_name](results)
+        name = langsmith_sync.record_experiment(
+            client,
+            set_name,
+            rows,
+            label="ollama" if args.ollama else "groq",
+            metadata={"limit": args.limit or "all", "ids": args.ids or "all"},
+        )
+        print(f"\nLangSmith experiment saved: {name} ({len(rows)} runs)")
+    except Exception as exc:  # no key, no network, an API change: say so, keep the result
+        detail = langsmith_sync.mask(f"{type(exc).__name__}: {exc}")  # no key in the console
+        message = exc.message if isinstance(exc, ConfigError) else detail
+        print(f"\nLangSmith upload failed (the local report above still counts): {message}")
+
+
 def deps_args_or_exit(args: argparse.Namespace) -> dict[str, Any]:
     try:
         return runner.build_deps_args(ollama=args.ollama)
@@ -80,6 +107,7 @@ async def run_security(args: argparse.Namespace) -> int:
     results = await security.run_router(customers, llm, limit=args.limit, delay=args.delay)
     docs = security.scan_documents(security.document_rows(rows))
     print(security.format_report(results, docs))
+    record_if_asked(args, "security", results)
     return 0 if security.gate_met(results, docs) else 1
 
 
@@ -109,6 +137,7 @@ async def run_language(args: argparse.Namespace) -> int:
         await get_engine().dispose()
     print()
     print(language.format_report(results))
+    record_if_asked(args, "language", results)
     return 0 if language.gate_met(results) else 1
 
 
@@ -137,6 +166,7 @@ async def run_tools(args: argparse.Namespace) -> int:
         await get_engine().dispose()
     print()
     print(tools.format_report(outcomes))
+    record_if_asked(args, "tools", outcomes)
     return 0 if tools.gate_met(outcomes) else 1
 
 
@@ -312,6 +342,7 @@ async def run(args: argparse.Namespace) -> int:
     print()
     report = product_qa.format_natural_report if natural else product_qa.format_report
     print(report(results))
+    record_if_asked(args, "natural" if natural else "golden", results)
     return 0 if all(r.ok for r in results) else 1
 
 
@@ -352,6 +383,12 @@ def main() -> None:
     parser.add_argument("--ids", help="only these question ids, e.g. price-31,price-32")
     parser.add_argument(
         "--ollama", action="store_true", help="router and composer through Ollama, not Groq"
+    )
+    parser.add_argument(
+        "--langsmith",
+        action="store_true",
+        help="also save the run as a LangSmith experiment (golden, natural, language, tools, "
+        "security; needs LANGSMITH_API_KEY; every text is masked first)",
     )
     parser.add_argument(
         "--delay", type=float, default=3.0, help="seconds between questions (Groq rate limit)"

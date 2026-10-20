@@ -1,13 +1,25 @@
 name: ci
 
+# Every push to main and every pull request (Blueprint 11.6). Nothing here needs a real key, the
+# real store or a phone: the model is a FakeLLM, Shopify and Meta are fakes, Postgres is a service.
+# A red run blocks the merge: that is the regression gate of Phase 12.
+
 on:
   push:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     services:
       db:
@@ -45,5 +57,28 @@ jobs:
       - name: Mypy
         run: uv run mypy src
 
-      - name: Pytest (skip tests that need real keys)
+      - name: Pytest (skip tests that need real keys or the live store)
         run: uv run pytest -m "not llm and not live"
+
+      - name: Failure drills (Blueprint 11.4, every drill ends safe and honest)
+        run: uv run python scripts/failure_drills.py
+
+      - name: T01 to T25 map and docs/test_cases.md are up to date
+        run: uv run python scripts/test_map.py --check
+
+      - name: Dependency audit (known vulnerabilities)
+        run: uv run pip-audit --skip-editable
+
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks looks at the commits of the push, not only the last one
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false  # read-only token: report in the log, no PR comments

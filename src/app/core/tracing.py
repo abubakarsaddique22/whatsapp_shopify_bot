@@ -7,15 +7,18 @@ LANGSMITH_TRACING=true is written in `.env`.
     configure_tracing()          # call once at program start (worker, app.cli chat)
 
 Tracing is only switched on when LANGSMITH_TRACING=true AND a key is set. A trace holds the
-customer's message and the bot's reply, so keep it off in any environment where that is not
-allowed (Phase 11 adds redaction before go-live). No phone number is ever put into the metadata
-(graph.turn_config).
+customer's message and the bot's reply. LANGSMITH_HIDE_TEXT=true (Phase 12 Step 7) makes the
+LangSmith client drop every input and output text (LANGSMITH_HIDE_INPUTS / _OUTPUTS): the trace
+still shows the steps, timings, tokens and errors. Production refuses tracing without it
+(core/settings.py). No phone number is ever put into the metadata (graph.turn_config).
 """
 
 import logging
 import os
 
 from app.core.settings import Settings, get_settings
+
+HIDE_VARIABLES = ("LANGSMITH_HIDE_INPUTS", "LANGSMITH_HIDE_OUTPUTS")
 
 log = logging.getLogger(__name__)
 
@@ -32,5 +35,13 @@ def configure_tracing(settings: Settings | None = None) -> bool:
     os.environ["LANGSMITH_TRACING"] = "true"
     os.environ["LANGSMITH_API_KEY"] = key
     os.environ["LANGSMITH_PROJECT"] = current.langsmith_project
-    log.info("langsmith_tracing_on", extra={"project": current.langsmith_project})
+    for name in HIDE_VARIABLES:
+        if current.langsmith_hide_text:
+            os.environ[name] = "true"
+        else:
+            os.environ.pop(name, None)
+    log.info(
+        "langsmith_tracing_on",
+        extra={"project": current.langsmith_project, "masked": current.langsmith_hide_text},
+    )
     return True

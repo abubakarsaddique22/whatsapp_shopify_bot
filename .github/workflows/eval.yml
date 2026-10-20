@@ -1,0 +1,87 @@
+name: eval
+
+# Phase 12: the evaluation with the REAL model (Blueprint 11.6: "a separate manual or nightly job").
+# Runs at night and by hand (Actions > eval > Run workflow). It needs, in the repository settings
+# (Settings > Secrets and variables > Actions):
+#   secrets:   LLM_API_KEY (Groq), LANGSMITH_API_KEY (optional: the runs become experiments)
+#   variables: ROUTER_MODEL, COMPOSER_MODEL
+# The sets that need the real Shopify store or Ollama (golden, natural, tools, language, latency,
+# tests/llm) stay on the developer's PC: CI has neither. Groq free tier: keep --delay.
+
+on:
+  schedule:
+    - cron: "17 21 * * *"  # 02:17 in Pakistan (UTC+5), when nobody is testing by hand
+  workflow_dispatch:
+    inputs:
+      langsmith:
+        description: "Also save the runs as LangSmith experiments"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: bot
+          POSTGRES_PASSWORD: bot
+          POSTGRES_DB: bot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      APP_ENV: local
+      DATABASE_URL: postgresql+asyncpg://bot:bot@localhost:5432/bot
+      LLM_PROVIDER: groq
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      ROUTER_MODEL: ${{ vars.ROUTER_MODEL }}
+      COMPOSER_MODEL: ${{ vars.COMPOSER_MODEL }}
+      LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+      EMBEDDING_PROVIDER: sentence-transformers
+      EMBEDDING_MODEL: paraphrase-multilingual-MiniLM-L12-v2
+      # --langsmith only when a key is set and (night run, or the box was ticked)
+      SAVE_TO_LANGSMITH: ${{ github.event_name == 'schedule' || inputs.langsmith }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Database tables
+        run: uv run alembic upgrade head
+
+      - name: The model settings are there
+        run: |
+          if [ -z "$LLM_API_KEY" ] || [ -z "$ROUTER_MODEL" ] || [ -z "$COMPOSER_MODEL" ]; then
+            echo "::error::Set the LLM_API_KEY secret and the ROUTER_MODEL / COMPOSER_MODEL variables"
+            exit 1
+          fi
+
+      - name: Security gate (the real router on every attack message, Groq)
+        run: |
+          FLAG=""
+          if [ -n "$LANGSMITH_API_KEY" ] && [ "$SAVE_TO_LANGSMITH" = "true" ]; then FLAG="--langsmith"; fi
+          uv run python scripts/run_eval.py --set security --delay 3 $FLAG
+
+      - name: Retrieval (report only until the client decides the abstention gate)
+        continue-on-error: true
+        run: uv run python scripts/run_eval.py --set retrieval

@@ -1,0 +1,15 @@
+# gitleaks (CI job "secret scan" and the pre-commit hook): the default rules plus one allowlist.
+title = "whatsapp-shopify-bot"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake secrets that the tests need on purpose (redaction, log scan, leak tests)"
+# tests/ holds FAKE tokens shaped like real ones (EAA..., gsk_..., shpss_...) so the redaction and
+# the leak tests can prove they are never logged or sent. A real secret belongs in .env, which is
+# in .gitignore and never committed. Do not widen this list to src/ or evals/.
+paths = [
+    '''^tests/''',
+    '''^\.env\.example$''',
+]

@@ -150,6 +150,10 @@ class Settings(BaseSettings):
     langsmith_tracing: bool = False
     langsmith_api_key: SecretStr = SecretStr("")
     langsmith_project: str = "wa-shopify-bot-dev"
+    # Phase 12 Step 7: traces of the live bot hold the customer's message and the bot's reply.
+    # true = LangSmith keeps the steps, timings and tokens but not the text (required in
+    # production when tracing is on). Eval datasets and experiments are masked separately.
+    langsmith_hide_text: bool = False
 
     @property
     def stt_allowed_language_set(self) -> frozenset[str]:
@@ -207,6 +211,9 @@ class Settings(BaseSettings):
         missing = [k for k, v in required.items() if not v or v.startswith("change-me")]
         if missing:
             raise ValueError(f"Missing or placeholder settings in production: {missing}")
+        if self.langsmith_tracing and not self.langsmith_hide_text:
+            # a trace would carry customer messages to a third party (Blueprint 9, privacy)
+            raise ValueError("LANGSMITH_TRACING in production needs LANGSMITH_HIDE_TEXT=true")
         return self
 
 
