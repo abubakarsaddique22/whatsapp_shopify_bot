@@ -31,6 +31,7 @@ class OutcomeCollector:
 
     def __init__(self) -> None:
         self.outcomes: dict[str, str] = {}
+        self.database_down = False
 
     def pytest_runtest_logreport(self, report: Any) -> None:
         if report.when != "call" and report.passed:
@@ -39,6 +40,10 @@ class OutcomeCollector:
         outcome = str(report.outcome)
         if hasattr(report, "wasxfail"):
             outcome = "xfailed" if report.skipped else "xpassed"
+        elif report.when == "setup" and report.failed:
+            outcome = "error in setup"  # the test never ran (database down, fixture broken)
+            if "ConnectionRefusedError" in str(report.longrepr):
+                self.database_down = True
         if self.outcomes.get(name) == "failed":
             return  # a failed call stays failed, whatever the teardown says
         self.outcomes[name] = outcome
@@ -66,6 +71,11 @@ def main() -> int:
 
     results = judge_all(collector.outcomes)
     print(format_report(results))
+    if collector.database_down:
+        print(
+            "\nThe drills could not reach Postgres (connection refused): this is not a bot "
+            "failure. Start it with `docker compose up -d db`, then run this script again."
+        )
     if any(r.status == "FAIL" for r in results):
         return 1
     if gate_met(results) or args.allow_gaps:
