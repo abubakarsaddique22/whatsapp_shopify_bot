@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.language.price_parser import parse_price
+from app.language.price_parser import parse_budget, parse_price
 
 
 @pytest.mark.parametrize(
@@ -63,3 +63,36 @@ def test_parse_price_found(text: str, expected: int):
 )
 def test_parse_price_not_a_price(text: str):
     assert parse_price(text) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Do you have any watch under 15000?", 15_000),
+        ("15000 se kam", 15_000),
+        ("15,000 tak koi watch", 15_000),
+        ("10k ke andar koi watch hai?", 10_000),
+        ("das hazar tak koi acchi watch dikhao", 10_000),
+        ("I need a watch under 20k, kala color mein chahiye", 20_000),
+        ("Rs 12000 wali watch", 12_000),  # a currency makes it a price
+        ("Rolex 116610 under 20k", 20_000),  # the unit price wins over the model number
+        ("budget 25000 hai", 25_000),
+    ],
+)
+def test_parse_budget_found(text: str, expected: int):
+    assert parse_budget(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",
+        "Rolex Submariner 16610 ki price?",  # live bug 2026-10-20: model number read as a limit
+        "16610 available hai?",
+        "116610LN price",
+        "Seiko 5 SNK809",
+        "black watch",
+    ],
+)
+def test_parse_budget_model_number_is_no_budget(text: str):
+    assert parse_budget(text) is None

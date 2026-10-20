@@ -10,6 +10,10 @@ Rules:
   ('10k', '1 lakh') any size is accepted.
 - A number glued to letters or a hyphen is not a price ('ga2100', 'GA-2100' are model codes).
 - Returns None when there is no price. Money is a whole number in the store currency.
+
+parse_budget is the stricter version for a price LIMIT: a bare number ('16610') is often a watch
+model number ('Rolex 16610 ki price?'), so it counts only next to a budget word ('under 15000',
+'15000 tak'). A unit ('10k', 'das hazar') or a currency ('Rs 15000') always counts.
 """
 
 import re
@@ -80,6 +84,12 @@ NUMBER_WORDS: dict[str, Decimal] = {
 # "Rs 12,500", "Rs.12500", "PKR 8000": the currency word is dropped before parsing.
 _CURRENCY = re.compile(r"\b(?:rs|pkr)\.?\s*(?=\d)")
 
+# words that make a bare number a budget: 'under 15000', '15000 se kam', '15000 tak'
+BUDGET_WORDS = frozenset(
+    {"under", "below", "within", "upto", "max", "maximum", "budget", "less", "kam", "tak", "andar"}
+)
+_WORD = re.compile(r"[a-z]+")
+
 
 @lru_cache
 def _compiled() -> tuple[re.Pattern[str], re.Pattern[str], dict[str, int]]:
@@ -105,13 +115,16 @@ def _to_price(value: Decimal) -> int | None:
     return number if 0 < number <= MAX_PRICE else None
 
 
-def parse_price(text: str) -> int | None:
-    """First price in `text` as a whole number, or None. See the module docstring for rules."""
+def _find_prices(text: str) -> list[tuple[int, int, bool]]:
+    """Every price in `text` as (position, price, bare). Bare = no unit and no currency."""
     if not text:
-        return None
-    cleaned = _CURRENCY.sub(" ", text.lower())
+        return []
+    lowered = text.lower()
+    after_currency = {m.end() for m in _CURRENCY.finditer(lowered)}
+    # same length as the original, so positions still line up with after_currency
+    cleaned = _CURRENCY.sub(lambda m: " " * len(m.group()), lowered)
     numeric, words, units = _compiled()
-    found: list[tuple[int, int]] = []  # (position in text, price)
+    found: list[tuple[int, int, bool]] = []
 
     for m in numeric.finditer(cleaned):
         number = Decimal(m["digits"].replace(",", "") + (f".{m['frac']}" if m["frac"] else ""))
@@ -120,11 +133,31 @@ def parse_price(text: str) -> int | None:
             continue
         price = _to_price(number * (units[unit] if unit else 1))
         if price:
-            found.append((m.start(), price))
+            found.append((m.start(), price, unit is None and m.start() not in after_currency))
 
     for m in words.finditer(cleaned):
         price = _to_price(NUMBER_WORDS[m["word"]] * units[m["unit"]])
         if price:
-            found.append((m.start(), price))
+            found.append((m.start(), price, False))
 
-    return min(found)[1] if found else None
+    return sorted(found)
+
+
+def parse_price(text: str) -> int | None:
+    """First price in `text` as a whole number, or None. See the module docstring for rules."""
+    found = _find_prices(text)
+    return found[0][1] if found else None
+
+
+def parse_budget(text: str) -> int | None:
+    """The customer's price limit, or None. 'Rolex 16610 ki price?' -> None (a model number).
+
+    A price with a unit or currency wins; a bare number counts only with a budget word.
+    """
+    found = _find_prices(text)
+    clear = [price for _, price, bare in found if not bare]
+    if clear:
+        return clear[0]
+    if found and BUDGET_WORDS & set(_WORD.findall(text.lower())):
+        return found[0][1]
+    return None

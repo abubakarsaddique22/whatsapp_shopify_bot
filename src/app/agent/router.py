@@ -14,7 +14,8 @@ What happens (Blueprint 6.2 layer 3, 8.2, 8.4):
    (ProviderUnavailable), `route_intent_checked` also says so, and the graph tells the customer
    honestly that there is a technical problem and hands over to the team, instead of asking for
    more detail as if the message was unclear.
-5. max_price is checked against the deterministic price parser (Latin script only).
+5. max_price is checked against the deterministic price parser (Latin script only). A bare
+   number without a budget word is a model number, not a price ('Rolex 16610 ki price?').
 
 This function never executes a tool. The permission gate decides what an intent may do.
 
@@ -41,7 +42,7 @@ from app.core.settings import get_settings
 from app.domain.models import Intent, Lang, RouterOutput
 from app.integrations.llm.base import ChatModel
 from app.language.detect import detect_language, normalize_input
-from app.language.price_parser import parse_price
+from app.language.price_parser import parse_budget
 
 log = logging.getLogger(__name__)
 
@@ -174,9 +175,10 @@ async def _ask(llm: ChatModel, system: str, user: str) -> RouterOutput | None:
 def _check_price(out: RouterOutput, text: str) -> RouterOutput:
     """The parser is exact ('das hazar' = 10000), so its answer wins over the model's.
 
-    No price in the message means the model invented one: drop it.
+    No price in the message means the model invented one: drop it. A bare number with no
+    budget word ('16610 ki price?') is a model number, so it is dropped too.
     """
-    price = parse_price(text)
+    price = parse_budget(text)
     if out.max_price == price:
         return out
     log.info("router_price_corrected")
