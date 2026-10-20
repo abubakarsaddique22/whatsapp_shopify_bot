@@ -31,6 +31,14 @@ picture_colour_missing:  # caption: the colour asked for has no picture of its o
   en: "{title} (I do not have a {colour} picture, this is the main picture)"
   roman_ur: "{title} ({colour} colour ki apni picture nahi hai, ye main picture hai)"
   en_roman_ur: "{title} (no {colour} picture, this is the main picture / {colour} ki picture nahi, ye main hai)"
+browse_list:  # filter-only search ('10k ke andar koi watch?'): the short list, then one question
+  en: "These watches fit: {names}. Which one do you like? You can also tell me a colour or style."
+  roman_ur: "Ye watches aap ki pasand mein aati hain: {names}. In mein se kaun si achi lagi? Aap koi rang ya style bhi bata sakte hain."
+  en_roman_ur: "These watches fit: {names}. / In mein se kaun si achi lagi? Rang ya style bhi bata sakte hain."
+browse_none:  # filter-only search found nothing
+  en: "I could not find a watch that fits that. Would you like to try another price, colour or style?"
+  roman_ur: "Is hisaab se koi watch nahi mili. Kya aap koi aur price, rang ya style try karna chahenge?"
+  en_roman_ur: "Nothing fits that. / Is hisaab se koi watch nahi mili, koi aur price ya rang batayein?"
 language_switched:  # the customer only asked for a reply language ('English mein bataein'); not counted as unclear
   en: "Sure, I will reply in English. How can I help you?"
   roman_ur: "Ji zaroor, ab main Roman Urdu mein jawab doon ga. Bataiye, main kya madad kar sakta hoon?"

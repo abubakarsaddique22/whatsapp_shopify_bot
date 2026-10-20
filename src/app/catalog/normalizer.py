@@ -72,6 +72,50 @@ def expand_aliases(text: str, path: Path = ALIASES_PATH) -> str:
     return result
 
 
+# ---- brand short forms (config/aliases.yaml, section brands)
+
+MAX_BRAND_VARIANTS = 4  # spellings of one query that search tries (the first is the query)
+
+
+@lru_cache
+def load_brand_groups(path: Path = ALIASES_PATH) -> list[tuple[str, ...]]:
+    """[('rolex', 'rlx'), ...]: every spelling of one brand, normalised, full name first."""
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = data.get("brands") or {}
+        groups = [
+            tuple(normalize_text(str(word)) for word in [name, *(values or [])])
+            for name, values in raw.items()
+        ]
+    except (OSError, yaml.YAMLError, AttributeError, TypeError) as exc:
+        raise ConfigError(f"Cannot read {path.name}") from exc
+    return [tuple(w for w in group if w) for group in groups if len(group) > 1]
+
+
+def brand_variants(words: str, path: Path = ALIASES_PATH) -> list[str]:
+    """'rolex submariner' -> ['rolex submariner', 'rlx submariner'].
+
+    `words` is already normalised (parse_query). The first item is always `words` itself; the
+    others swap a brand name for its short form or the other way round. Whole words only, so
+    'apple' never becomes 'audemars piguetple'.
+    """
+    variants = [words]
+    for group in load_brand_groups(path):
+        for member in group:
+            pattern = rf"(?<!\S){re.escape(member)}(?!\S)"
+            if not re.search(pattern, words):
+                continue
+            for other in group:
+                if other == member:
+                    continue
+                for known in list(variants):
+                    swapped = re.sub(pattern, other, known)
+                    if swapped not in variants:
+                        variants.append(swapped)
+            break
+    return variants[:MAX_BRAND_VARIANTS]
+
+
 # ---- option names and colours
 
 

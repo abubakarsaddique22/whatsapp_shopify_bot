@@ -1,3 +1,13 @@
 # Brand / product nicknames used by product search (Phase 3). Extend with the client.
 aliases:
   g-shock: [gshock, g shock]
+
+# Brand short forms in the store's own titles (client decision 2026-10-20: 'RLX - Submariner
+# Rubber' is a Rolex). Search tries BOTH spellings, so 'Rolex Submariner' also finds the RLX
+# titles and 'RLX Submariner' also finds 'Rolex Submariner, 16610'. Whole words only.
+brands:
+  rolex: [rlx]
+  cartier: [crtr]
+  omega: [omga]
+  patek philippe: [pp]
+  audemars piguet: [ap]

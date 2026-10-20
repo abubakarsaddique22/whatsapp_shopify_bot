@@ -87,7 +87,9 @@ ERR_CAP = "tool_cap_reached"
 ERR_COMPOSER = "composer_failed"  # provider failed or two invalid answers: safe_fallback
 ERR_BUDGET = "turn_budget_exceeded"  # the time budget of the turn is used up: safe_fallback
 
-MAX_NAMES = 3  # product names listed in one clarifying question
+# product names listed in one clarifying question: 5, so every Submariner model is named (client
+# decision 2026-10-20); search itself never returns more than 5
+MAX_NAMES = 5
 MAX_OPTIONS = 8  # colours / options of ONE product listed in one clarifying question
 
 
@@ -297,6 +299,21 @@ async def _product_flow(run: _ToolRun, router: RouterOutput, text: str) -> None:
         found = _pick_title_named_in_text(run, found, text)
         found = await _narrow_by_colour(run, router, found)
         product_id = _remember_search(conv, found)
+    elif run.intent is Intent.PRODUCT_SEARCH and (
+        router.max_price is not None or colour or router.size_mm is not None
+    ):
+        # '10k ke andar koi watch?': no product words, only filters. A short list of what fits,
+        # then one question about the customer's taste (client decision 2026-10-20).
+        found = await run.call(
+            TOOL_SEARCH,
+            query="",
+            colour=colour,
+            size_mm=router.size_mm,
+            max_price=router.max_price,
+        )
+        if found is not None:
+            _remember_search(conv, found)
+        return
     elif conv.current_product_id and run.intent is not Intent.PRODUCT_SEARCH:
         product_id = conv.current_product_id
     else:
@@ -606,13 +623,17 @@ async def clarify_node(state: GraphState) -> dict[str, Any]:
         return _clarified(state, conv, "ask_which_variant", title=title, options=listed)
 
     names: list[str] = []
+    browse = False
     for result in state.get("tool_results", []):  # names come from the search result only
         if result.tool == TOOL_SEARCH and isinstance(result.data, dict):
+            browse = bool(result.data.get("browse"))
             if result.data.get("kind") == "none":
-                return _clarified(state, conv, "not_found")
+                return _clarified(state, conv, "browse_none" if browse else "not_found")
             names = [c["title"] for c in result.data.get("candidates", [])[:MAX_NAMES]]
     if names:
         listed = _join_names(names, state.get("reply_language", "en"))
+        if browse:  # a list by price / colour / size: show it and ask about the taste
+            return _clarified(state, conv, "browse_list", names=listed)
         return _clarified(state, conv, "ask_which_product", names=listed)
     if ERR_NO_PRODUCT in state.get("tool_errors", []):
         return _clarified(state, conv, "ask_product_name")

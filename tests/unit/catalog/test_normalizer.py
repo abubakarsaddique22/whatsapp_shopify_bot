@@ -3,6 +3,7 @@
 import pytest
 
 from app.catalog.normalizer import (
+    brand_variants,
     canonical_option_name,
     colour_of_value,
     colours_of,
@@ -37,6 +38,24 @@ def test_expand_aliases_with_the_real_config():
     # config/aliases.yaml: g-shock: [gshock, g shock]
     assert expand_aliases("gshock ga2100") == "g shock ga2100"
     assert expand_aliases("G-Shock GA-110") == "g shock ga 110"
+
+
+def test_brand_short_forms_from_the_real_config():
+    # config/aliases.yaml brands (client decision 2026-10-20): RLX = Rolex, AP = Audemars Piguet
+    assert brand_variants("rolex submariner") == ["rolex submariner", "rlx submariner"]
+    assert brand_variants("rlx submariner") == ["rlx submariner", "rolex submariner"]
+    assert "audemars piguet royal oak" in brand_variants("ap royal oak")
+    assert brand_variants("casio ga 2100") == ["casio ga 2100"]  # no brand short form
+
+
+def test_brand_short_forms_replace_whole_words_only(tmp_path):
+    config = tmp_path / "aliases.yaml"
+    config.write_text("brands:\n  rolex: [rlx]\n  omega: [omga]\n", encoding="utf-8")
+    assert brand_variants("rlxx submariner", config) == ["rlxx submariner"]
+    both = brand_variants("rolex or omega", config)
+    assert both[0] == "rolex or omega"
+    assert "rlx or omga" in both  # the two brands combine
+    assert len(both) <= 4
 
 
 def test_expand_aliases_replaces_whole_words_only(tmp_path):

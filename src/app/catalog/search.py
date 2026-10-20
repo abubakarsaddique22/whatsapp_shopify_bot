@@ -20,6 +20,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.catalog.normalizer import (
+    brand_variants,
     canonical_option_name,
     colour_of_value,
     colours_of,
@@ -36,6 +37,8 @@ MIN_SCORE = 0.35  # below this a product is not a match at all
 STRONG_SCORE = 0.5  # a single match must reach this to be treated as 'the' product
 LEAD_MARGIN = 0.10  # the best match must lead the second by this much to win outright
 MIN_COMPACT_LEN = 3  # 'ga2100' may match glued titles; 'g' alone may not
+BROWSE_POOL = 500  # filter-only search ('10k ke andar koi watch?'): visible products looked at
+BROWSE_SCORE = 0.5  # every browse result scores the same; one result alone is 'the' product
 
 # The haystack is title + brand + product type + tags, lowercased and reduced to a-z 0-9.
 # Score = the better of: trigram word similarity, or 1.0 when the glued query ('ga2100') appears
@@ -130,6 +133,19 @@ _FUZZY_NAMED_SQL = text(
     """
 )
 
+# Filter-only search (client decision 2026-10-20, '10k ke andar koi watch?'): no product words,
+# only a price limit, a colour or a case size. Every visible product is a candidate; the variant
+# filters below decide, and the matches nearest to the price limit come first.
+_BROWSE_SQL = text(
+    """
+    SELECT id, title, url, vendor, tags, CAST(:score AS real) AS score
+    FROM products_mirror
+    WHERE is_visible
+    ORDER BY title
+    LIMIT :pool
+    """
+)
+
 MIN_NAMED_WORDS = 2  # a one-word title ('Watch') would be 'found' in almost any message
 MIN_NAMED_CHARS = 8
 # Measured 2026-10-20 on the real titles: one typo in a full title scores 0.83, the nearest other
@@ -211,6 +227,7 @@ class SearchResult:
     candidates: list[Candidate]
     name_matches: int  # products matching the words, BEFORE colour, size and price filters
     colour: str | None  # the colour filter that was applied (also when found in the query text)
+    browse: bool = False  # no product words: a list by price / colour / size only
 
 
 # ---- pure helpers (no database)
@@ -306,6 +323,27 @@ async def _exact_title_rows(session: AsyncSession, query: str) -> list[Any]:
     return list((await session.execute(_EXACT_SQL, {"t": normalized})).all())
 
 
+async def _ranked_rows(session: AsyncSession, words: str) -> list[Any]:
+    """Rank visible products for the words AND for their brand short forms (rolex / rlx).
+
+    Each spelling is ranked on its own; a product keeps its best score. So 'Rolex Submariner'
+    finds 'Rolex Submariner, 16610' and every 'RLX - Submariner ...' title (client decision).
+    """
+    best: dict[str, Any] = {}
+    for spelling in brand_variants(words):
+        glued = spelling.replace(" ", "")
+        params = {
+            "q": spelling,
+            "qc": glued if len(glued) >= MIN_COMPACT_LEN else "",
+            "pool": CANDIDATE_POOL,
+        }
+        for row in (await session.execute(_RANK_SQL, params)).all():
+            if row.id not in best or row.score > best[row.id].score:
+                best[row.id] = row
+    rows = sorted(best.values(), key=lambda r: (-r.score, r.title))
+    return rows[:CANDIDATE_POOL]
+
+
 async def search_products(
     session: AsyncSession,
     query: str,
@@ -317,6 +355,7 @@ async def search_products(
 ) -> SearchResult:
     """Find visible products for a customer's words. Never returns hidden products."""
     limit = max(1, min(limit, MAX_RESULTS))
+    browse = False
     named: list[Any] = await _exact_title_rows(session, query)
     if named:
         # The whole title was typed: colour words in it belong to the title, not to a filter.
@@ -324,19 +363,18 @@ async def search_products(
     else:
         words, colour_in_query = parse_query(query)
         wanted = colour_of_value(colour) if colour else colour_in_query
-        if not words:
+        if not words and (wanted is not None or size_mm is not None or max_price is not None):
+            # no product words, only filters: list what fits (browse)
+            browse = True
+            params = {"score": BROWSE_SCORE, "pool": BROWSE_POOL}
+            named = list((await session.execute(_BROWSE_SQL, params)).all())
+        elif not words:
             return SearchResult(MatchKind.NONE, [], 0, wanted)
-
-        glued = words.replace(" ", "")
-        params = {
-            "q": words,
-            "qc": glued if len(glued) >= MIN_COMPACT_LEN else "",
-            "pool": CANDIDATE_POOL,
-        }
-        rows = (await session.execute(_RANK_SQL, params)).all()
-        named = [row for row in rows if row.score >= MIN_SCORE]
+        else:
+            rows = await _ranked_rows(session, words)
+            named = [row for row in rows if row.score >= MIN_SCORE]
         if not named:
-            return SearchResult(MatchKind.NONE, [], 0, wanted)
+            return SearchResult(MatchKind.NONE, [], 0, wanted, browse)
 
     variant_rows = await session.execute(
         select(
@@ -394,6 +432,13 @@ async def search_products(
                 colour_verified=verified,
             )
         )
+    if browse:
+        # nearest to the price limit first (the most the customer wants to spend), then by name
+        price_of = {v.id: v.price for own in variants.values() for v in own}
+        candidates.sort(
+            key=lambda c: -max((price_of[vid] for vid in c.variant_ids), default=Decimal(0))
+        )
     candidates.sort(key=lambda c: c.colour_verified is False)  # confirmed first, then by score
+    total = len(candidates) if browse else len(named)
     candidates = candidates[:limit]
-    return SearchResult(classify(candidates), candidates, len(named), wanted)
+    return SearchResult(classify(candidates), candidates, total, wanted, browse)

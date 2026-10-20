@@ -26,6 +26,8 @@ KINDS = {
     "bot_trouble",
     "voice_unavailable",
     "language_switched",
+    "browse_list",
+    "browse_none",
 }
 
 

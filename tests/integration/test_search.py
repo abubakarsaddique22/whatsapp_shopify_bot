@@ -9,12 +9,14 @@ from collections.abc import AsyncIterator
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.catalog.importer import compute_hash, image_rows, product_row, variant_rows
 from app.catalog.search import MatchKind, search_products, title_named_in_text
 from app.core.settings import get_settings
 from app.db import repositories as repo
+from app.db.tables import ProductMirror
 from app.domain.catalog import Money, Product, StockState, Variant
 
 
@@ -88,6 +90,39 @@ KRELIX_GOLD = plain_product(
 ).model_copy(update={"vendor": "Krelix"})
 
 
+# The real store writes Rolex in full once and as 'RLX' in a family of titles (client: RLX = Rolex)
+ROLEX_SUB = plain_product(9012, "Rolex Submariner, 16610").model_copy(update={"vendor": "Rolex"})
+RLX_SUB = plain_product(9013, "RLX - Submariner Rubber - Gold Black - AAA Quality").model_copy(
+    update={"vendor": "RLX"}
+)
+
+FIXTURES = (
+    TIDE,
+    TIDE_ULTRA,
+    GA,
+    PLAIN,
+    PLAIN_BLACK,
+    VEXOR_A,
+    VEXOR_B,
+    DUPE_A,
+    DUPE_B,
+    KRELIX_GREEN,
+    KRELIX_GOLD,
+    ROLEX_SUB,
+    RLX_SUB,
+)
+
+
+async def only_the_test_products(session: AsyncSession) -> None:
+    """Hide the real store's products for this test (rolled back with everything else)."""
+    await session.execute(
+        update(ProductMirror)
+        .where(ProductMirror.id.not_in([p.id for p in FIXTURES]))
+        .values(is_visible=False)
+        .execution_options(synchronize_session=False)
+    )
+
+
 @pytest.fixture
 async def session() -> AsyncIterator[AsyncSession]:
     engine = create_async_engine(get_settings().database_url)
@@ -95,19 +130,7 @@ async def session() -> AsyncIterator[AsyncSession]:
         async with engine.connect() as conn:
             transaction = await conn.begin()
             db = AsyncSession(bind=conn, expire_on_commit=False)
-            for product in (
-                TIDE,
-                TIDE_ULTRA,
-                GA,
-                PLAIN,
-                PLAIN_BLACK,
-                VEXOR_A,
-                VEXOR_B,
-                DUPE_A,
-                DUPE_B,
-                KRELIX_GREEN,
-                KRELIX_GOLD,
-            ):
+            for product in FIXTURES:
                 await repo.upsert_product(
                     db,
                     product_row(product, compute_hash(product)),
@@ -242,3 +265,47 @@ async def test_two_products_with_the_same_title_stay_ambiguous(session):
     assert result.kind == MatchKind.AMBIGUOUS
     titles = [c.title for c in result.candidates]
     assert titles.count("Dupe Watch") == 2  # both are offered, the bot asks which one
+
+
+# ---- client decisions 2026-10-20: RLX = Rolex, and a list by price ('10k ke andar')
+
+
+@pytest.mark.parametrize("query", ["Rolex Submariner", "RLX Submariner", "rlx submariner"])
+async def test_rolex_and_rlx_find_every_submariner_model(session, query):
+    await only_the_test_products(session)
+    result = await search_products(session, query)
+    titles = {c.title for c in result.candidates}
+    assert {ROLEX_SUB.title, RLX_SUB.title} <= titles
+    assert result.kind == MatchKind.AMBIGUOUS  # the customer is shown all of them and picks one
+
+
+async def test_a_full_title_still_finds_that_one_submariner(session):
+    await only_the_test_products(session)
+    result = await search_products(session, "Rolex Submariner, 16610")
+    assert result.kind == MatchKind.ONE
+    assert result.candidates[0].title == ROLEX_SUB.title
+
+
+async def test_a_price_limit_alone_lists_what_fits_nearest_to_the_limit_first(session):
+    await only_the_test_products(session)
+    result = await search_products(session, "", max_price=10000)
+
+    assert result.browse is True
+    assert result.kind == MatchKind.AMBIGUOUS  # a list: the bot shows it and asks the taste
+    assert 1 < len(result.candidates) <= 5
+    assert result.candidates[0].title == TIDE.title  # Rs 9,500: nearest to Rs 10,000
+    titles = {c.title for c in result.candidates}
+    assert TIDE_ULTRA.title not in titles and GA.title not in titles  # over the limit
+
+
+async def test_a_price_limit_nothing_fits_is_none(session):
+    await only_the_test_products(session)
+    result = await search_products(session, "", max_price=100)
+    assert result.kind == MatchKind.NONE
+    assert result.browse is True
+
+
+async def test_no_words_and_no_filter_is_still_none(session):
+    result = await search_products(session, "")
+    assert result.kind == MatchKind.NONE
+    assert result.browse is False

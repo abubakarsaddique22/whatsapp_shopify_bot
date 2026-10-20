@@ -241,11 +241,16 @@ async def tool_search_products(
     size_mm: int | None = None,
     max_price: int | None = None,
 ) -> ToolResult:
-    """Find visible products. No price is returned: ask get_price for it."""
+    """Find visible products. No price is returned: ask get_price for it.
+
+    An empty query is allowed only with a filter (price limit, colour or case size): then the
+    result is a short list of what fits ('10k ke andar koi watch?'), with data['browse'] true.
+    """
 
     async def work() -> ToolResult:
         text = (query or "").strip()
-        if not text or len(text) > MAX_QUERY_LEN:
+        has_filter = colour is not None or size_mm is not None or max_price is not None
+        if len(text) > MAX_QUERY_LEN or (not text and not has_filter):
             raise ValidationFailed("query must be 1 to 120 characters")
         _check_filters(size_mm, max_price)
         found = await search_products(
@@ -255,6 +260,7 @@ async def tool_search_products(
             TOOL_SEARCH,
             data={
                 "kind": found.kind.value,  # one | ambiguous | none
+                "browse": found.browse,  # True: no product words, a list by the filters
                 "colour": found.colour,
                 "name_matches": found.name_matches,
                 "candidates": [
