@@ -1,13 +1,14 @@
 """GraphQL queries (read-only: `query` only, never `mutation`; client.py also refuses mutations).
 
 Shopify rejects a single query whose requested cost is above 1000 points. A product page costs
-about 1 + variants*3 + metafields + media per product (1 + 20*3 + 25 + 5 = 91), so the page
+about 1 + variants*3 + metafields + media per product (1 + 50*3 + 25 + 5 = 181), so the page
 size below keeps it near 730.
 Ask only for fields we use: smaller queries are faster and get throttled less.
 """
 
-PRODUCTS_PAGE_SIZE = 8
-VARIANTS_PER_PRODUCT = 20  # watches have few variants; the mapper logs a warning if there are more
+PRODUCTS_PAGE_SIZE = 4
+# one store product had more than 20 variants (2026-10-20); the mapper still warns above 50
+VARIANTS_PER_PRODUCT = 50
 
 _VARIANT_FIELDS = """
   id title sku price compareAtPrice availableForSale inventoryQuantity inventoryPolicy
