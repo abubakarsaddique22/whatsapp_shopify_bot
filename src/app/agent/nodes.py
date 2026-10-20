@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.composer import compose
 from app.agent.gate import POLICY_DOC_TYPE, TOOL_HANDOFF, choose_branch, gate
 from app.agent.image_flow import wants_more
-from app.agent.router import route_intent
+from app.agent.router import route_intent_checked
 from app.agent.state import (
     MAX_CLARIFICATIONS,
     MAX_COMPOSE_RETRIES,
@@ -125,7 +125,7 @@ async def route_intent_node(state: GraphState, deps: Deps) -> dict[str, Any]:
         basics = await repo.product_basics(deps.session, conv.current_product_id)
         title = basics.title if basics else None
 
-    out = await route_intent(
+    out, provider_down = await route_intent_checked(
         text, deps.llm, last_language=conv.language, current_product_title=title
     )
     language = next_language(conv.language, previous, out.language, text)
@@ -133,6 +133,7 @@ async def route_intent_node(state: GraphState, deps: Deps) -> dict[str, Any]:
     conv.last_router_output = out
     return {
         "router": out,
+        "router_unavailable": provider_down,
         "conversation": conv,
         "reply_language": reply_language(language, urdu_script_replies=deps.urdu_script_replies),
     }
@@ -141,6 +142,11 @@ async def route_intent_node(state: GraphState, deps: Deps) -> dict[str, Any]:
 async def gate_node(state: GraphState) -> dict[str, Any]:
     """Pick the branch. An abuse / injection message is a security event (logged, never shown)."""
     out = state.get("router")
+    if state.get("router_unavailable"):
+        # The model provider is down (failure drill llm_down): the message is not unclear, WE
+        # have a problem. Say so honestly and let a person take over (handoff_node).
+        log.warning("router_unavailable")
+        return {"branch": "handoff"}
     if out is None:
         return {"branch": "clarify"}
     update: dict[str, Any] = {"branch": choose_branch(out, state["conversation"])}
@@ -602,6 +608,8 @@ async def handoff_node(
     """
     conv = state["conversation"].model_copy(deep=True)
     out = state.get("router")
+    if reason is None and state.get("router_unavailable"):
+        reason, kind = "llm_unavailable", "bot_trouble"  # honest: the fault is ours
     reason = reason or (out.intent.value if out else "unknown")
     conv.needs_handoff = True
     conv.handoff_reason = reason

@@ -72,6 +72,7 @@ class GraphState(TypedDict, total=False):
     # --- language and routing
     language_hint: str | None  # cheap hint from language/detect.py (the router decides)
     router: RouterOutput | None
+    router_unavailable: bool  # the real LLM provider could not answer (failure drill llm_down)
     reply_language: ReplyLang
     branch: Branch | None
 
@@ -112,6 +113,7 @@ def new_turn(
         conversation=conversation,
         language_hint=None,
         router=None,
+        router_unavailable=False,
         reply_language="en",
         branch=None,
         tool_results=[],

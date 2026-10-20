@@ -10,6 +10,10 @@ What happens (Blueprint 6.2 layer 3, 8.2, 8.4):
    ONE repair attempt that includes the validation problem.
 4. Still invalid, or the provider failed: fall back to intent = unclear, needs_clarification =
    True. The bot then asks the customer politely; it never guesses and never crashes.
+   Exception (Phase 12 failure drill llm_down): when the REAL provider is down
+   (ProviderUnavailable), `route_intent_checked` also says so, and the graph tells the customer
+   honestly that there is a technical problem and hands over to the team, instead of asking for
+   more detail as if the message was unclear.
 5. max_price is checked against the deterministic price parser (Latin script only).
 
 This function never executes a tool. The permission gate decides what an intent may do.
@@ -22,7 +26,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.core.errors import ConfigError, ProviderError
+from app.core.errors import ConfigError, ProviderError, ProviderUnavailable
 from app.domain.models import Intent, Lang, RouterOutput
 from app.integrations.llm.base import ChatModel
 from app.language.detect import detect_language, normalize_input
@@ -111,6 +115,8 @@ async def _ask(llm: ChatModel, system: str, user: str) -> RouterOutput | None:
                 detail.get("error_type"),
                 detail.get("status_code"),
             )
+            if isinstance(exc, ProviderUnavailable):
+                raise  # route_intent_checked reports it: the provider is down, not the message
             return None
         try:
             return _parse(answer)
@@ -132,6 +138,36 @@ def _check_price(out: RouterOutput, text: str) -> RouterOutput:
     return out.model_copy(update={"max_price": price})
 
 
+async def route_intent_checked(
+    text: str,
+    llm: ChatModel,
+    *,
+    last_language: Lang = Lang.UNKNOWN,
+    current_product_title: str | None = None,
+) -> tuple[RouterOutput, bool]:
+    """(router output, provider_down). provider_down is True only when the real provider could
+    not answer (ProviderUnavailable); the output is then the 'unclear' fallback."""
+    clean = normalize_input(text)
+    hint = detect_language(clean)
+    if not clean:
+        return _unclear(hint.language), False
+
+    system = _system_prompt(
+        current_product_title, last_language, f"{hint.language.value} (script: {hint.script})"
+    )
+    user = f"<customer_message>\n{clean.replace(CLOSING_TAG, '')}\n{CLOSING_TAG}"
+
+    try:
+        out = await _ask(llm, system, user)
+    except ProviderUnavailable:
+        return _unclear(hint.language), True
+    if out is None:
+        return _unclear(hint.language), False
+    if hint.script == "latin":  # the parser does not read Urdu-script numbers
+        out = _check_price(out, clean)
+    return out, False
+
+
 async def route_intent(
     text: str,
     llm: ChatModel,
@@ -139,19 +175,8 @@ async def route_intent(
     last_language: Lang = Lang.UNKNOWN,
     current_product_title: str | None = None,
 ) -> RouterOutput:
-    clean = normalize_input(text)
-    hint = detect_language(clean)
-    if not clean:
-        return _unclear(hint.language)
-
-    system = _system_prompt(
-        current_product_title, last_language, f"{hint.language.value} (script: {hint.script})"
+    """The router output only (evals, the debug reply, the language step)."""
+    out, _ = await route_intent_checked(
+        text, llm, last_language=last_language, current_product_title=current_product_title
     )
-    user = f"<customer_message>\n{clean.replace(CLOSING_TAG, '')}\n{CLOSING_TAG}"
-
-    out = await _ask(llm, system, user)
-    if out is None:
-        return _unclear(hint.language)
-    if hint.script == "latin":  # the parser does not read Urdu-script numbers
-        out = _check_price(out, clean)
     return out

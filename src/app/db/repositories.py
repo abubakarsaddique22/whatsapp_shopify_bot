@@ -160,13 +160,19 @@ async def mark_outbox_failed_by_wamid(
 
 
 async def claim_inbox(session: AsyncSession) -> WhatsAppInbox | None:
-    """Oldest pending inbound message. SKIP LOCKED: two workers never take the same row."""
+    """Oldest pending inbound message. SKIP LOCKED: two workers never take the same row.
+
+    populate_existing: record_inbox_failure updates `attempts` with synchronize_session=False,
+    so a session that already holds this row would hand back the stale count. The voice path
+    needs the real count to know the LAST try (worker.handle_voice). Same fix as claim_outbox.
+    """
     result = await session.execute(
         select(WhatsAppInbox)
         .where(WhatsAppInbox.status == "pending")
         .order_by(WhatsAppInbox.id)
         .limit(1)
         .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
     )
     return result.scalar_one_or_none()
 

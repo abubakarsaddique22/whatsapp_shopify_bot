@@ -95,6 +95,18 @@ class ProviderError(AppError):
     code = "provider_error"
 
 
+class ProviderUnavailable(ProviderError):
+    """The REAL provider could not answer: timeout, network, 429, 5xx, bad key, empty answer.
+
+    Raised by the real chat model (integrations/llm/chat_factory.py). The router turns it into an
+    honest 'technical problem, the team will help' turn instead of asking the customer for more
+    detail (Phase 12 failure drill llm_down). A plain ProviderError (for example a FakeLLM that
+    ran out of answers in a test) keeps the old behaviour: intent unclear.
+    """
+
+    code = "provider_unavailable"
+
+
 class TranscriptionError(ProviderError):
     code = "transcription_error"
 

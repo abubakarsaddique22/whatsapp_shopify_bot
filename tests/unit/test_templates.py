@@ -23,6 +23,8 @@ KINDS = {
     "rate_limited",
     "cooldown",
     "card_warning",
+    "bot_trouble",
+    "voice_unavailable",
 }
 
 

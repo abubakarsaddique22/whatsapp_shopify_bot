@@ -29,7 +29,7 @@ from app.agent.language_step import format_debug_reply, run_language_step
 from app.agent.nodes import Deps
 from app.agent.state import Source
 from app.agent.templates import render
-from app.core.errors import AppError, UnsupportedMedia
+from app.core.errors import AppError, ProviderError, UnsupportedMedia
 from app.core.ids import correlation_id_var, new_correlation_id
 from app.core.logging import setup_logging
 from app.core.settings import Settings, get_settings
@@ -193,11 +193,23 @@ async def handle_voice(
     A clear transcript goes on like a typed message. A doubtful one gets a polite request to
     repeat, in the conversation's language, and nothing is answered from it. Only the transcript
     is kept, never the audio (blueprint 6.9).
+
+    Speech provider down (failure drill stt_down): the error is raised so the worker tries again
+    (record_inbox_failure); on the LAST try the customer is told honestly, in the conversation
+    language, that voice notes cannot be read right now and to type the question. Before this the
+    message ended 'failed' and the customer heard nothing.
     """
     try:
         outcome = await voice_outcome(media_id, settings)
     except UnsupportedMedia:
         return "[audio]", [Reply(UNSUPPORTED_REPLY)]  # the file is not audio at all
+    except ProviderError:
+        if inbox.attempts + 1 < MAX_ATTEMPTS:
+            raise  # not the last try: the worker tries this voice note again
+        log.warning("voice_provider_down", extra={"inbox_id": inbox.id})
+        state = await repo.load_state(session, inbox.conversation_id)
+        language = reply_language(state.language, urdu_script_replies=settings.urdu_script_replies)
+        return "[voice: not transcribed]", [Reply(render("voice_unavailable", language))]
 
     transcript = outcome.transcript
     if transcript is None:

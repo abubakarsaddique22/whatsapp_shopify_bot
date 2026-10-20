@@ -17,7 +17,7 @@ from typing import Literal
 
 from pydantic import SecretStr
 
-from app.core.errors import ConfigError, ProviderError
+from app.core.errors import ConfigError, ProviderUnavailable
 from app.core.settings import Settings, get_settings
 from app.integrations.llm.base import ChatModel
 from app.integrations.llm.fake_llm import FakeLLM
@@ -49,7 +49,7 @@ class OpenAICompatChat:
             response = await self._llm.ainvoke([("system", system), ("human", user)])
         except Exception as exc:
             # Do not copy str(exc) into the error: provider messages can echo part of the key.
-            raise ProviderError(
+            raise ProviderUnavailable(
                 "llm call failed",
                 detail={
                     "error_type": type(exc).__name__,
@@ -58,7 +58,7 @@ class OpenAICompatChat:
             ) from None
         text = response.content
         if not isinstance(text, str) or not text.strip():
-            raise ProviderError("llm returned no text")
+            raise ProviderUnavailable("llm returned no text")
         return text
 
 
