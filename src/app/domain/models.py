@@ -98,7 +98,7 @@ class ConversationState(BaseModel):
     # the customer was already told about with ONE 'our team has your request' (then silence)
     handoff_reason: str | None = None
     pause_acked_for: datetime | None = None
-    # P8 owner first: the owner answered this customer from the WhatsApp Business app, so the bot
-    # stays silent for this customer until then (and sends no notice: every bot message costs)
-    owner_active_until: datetime | None = None
+    # the team's last reply to this customer from the WhatsApp Business app (smb_message_echoes):
+    # a message the team already answered is never answered again by the bot (owner/presence.py)
+    team_replied_at: datetime | None = None
     history: list[dict[str, str]] = []  # short rolling window: {"role": ..., "text": ...}

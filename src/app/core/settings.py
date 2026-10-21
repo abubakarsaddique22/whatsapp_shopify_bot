@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     whatsapp_verify_token: SecretStr = SecretStr("change-me-random")
     max_audio_seconds: int = 90
     max_audio_bytes: int = 5_000_000
+    # Embedded Signup page (/signup, api/signup.py): connects the store's WhatsApp Business app
+    # number to the bot (Coexistence). META_APP_ID = the number at the top of the App Dashboard;
+    # SIGNUP_CONFIG_ID = Facebook Login for Business > Configurations. SIGNUP_KEY = 24+ random
+    # characters, part of the page link; empty = the page does not exist (404).
+    meta_app_id: str = ""
+    signup_config_id: str = ""
+    signup_key: SecretStr = SecretStr("")
 
     # llm
     llm_provider: str = ""
@@ -145,15 +152,13 @@ class Settings(BaseSettings):
     business_hours: str = "10:00-20:00"  # local time, HH:MM-HH:MM
     # the time zone of business_hours as an offset from UTC (Pakistan has no summer time: +05:00)
     business_utc_offset: str = "+05:00"
-    # P8 "owner first, bot as backup". Needs WhatsApp Coexistence: the owner answers from the
-    # WhatsApp Business app on the SAME number and Meta sends those replies to the webhook
-    # (smb_message_echoes). Off by default: with OWNER_FIRST=false the bot answers at once.
-    owner_first: bool = False
-    owner_wait_minutes: int = 3  # in owner hours a new message waits this long for the owner
-    owner_hours: str = ""  # HH:MM-HH:MM in BUSINESS_UTC_OFFSET; empty = BUSINESS_HOURS
-    # after an owner reply from the app, the bot stays silent for that customer this long. This
-    # works even with OWNER_FIRST=false: the bot never talks over the owner.
-    owner_reply_pause_minutes: int = 60
+    # Bot ON / OFF button for the team (owner/presence.py, api/team.py). Needs WhatsApp
+    # Coexistence for the team's replies: they answer from the WhatsApp Business app on the SAME
+    # number and Meta sends those replies to the webhook (smb_message_echoes).
+    # Bot OFF: a new message waits this long; nobody answered -> the bot answers and turns ON.
+    team_wait_minutes: int = 3
+    # password of the /team page (one for the whole team, 8+ characters). Empty = no page.
+    team_password: SecretStr = SecretStr("")
     # HANDOFF_CHANNEL=email only (handoff/notifier.py): the mail server that sends the notification.
     # Port 465 = SSL from the start, any other port (587) = STARTTLS. Empty SMTP_FROM = SMTP_USER.
     smtp_host: str = ""
@@ -195,14 +200,14 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name.upper()} must be at least 1")
         if self.handoff_pause_hours < 1:
             raise ValueError("HANDOFF_PAUSE_HOURS must be at least 1")
-        if self.owner_hours and not _BUSINESS_HOURS.fullmatch(self.owner_hours):
-            raise ValueError("OWNER_HOURS must be empty or look like 10:00-20:00")
         if not 0 <= self.router_cache_seconds <= 86400:
             raise ValueError("ROUTER_CACHE_SECONDS must be between 0 and 86400")
-        if not 0 <= self.owner_wait_minutes <= 60:
-            raise ValueError("OWNER_WAIT_MINUTES must be between 0 and 60")
-        if not 1 <= self.owner_reply_pause_minutes <= 1440:
-            raise ValueError("OWNER_REPLY_PAUSE_MINUTES must be between 1 and 1440")
+        if not 1 <= self.team_wait_minutes <= 60:
+            raise ValueError("TEAM_WAIT_MINUTES must be between 1 and 60")
+        if 0 < len(self.team_password.get_secret_value()) < 8:
+            raise ValueError("TEAM_PASSWORD must be empty (no /team page) or 8+ characters")
+        if 0 < len(self.signup_key.get_secret_value()) < 24:
+            raise ValueError("SIGNUP_KEY must be empty (no /signup page) or 24+ characters")
         for name in (
             "retention_conversation_days",
             "retention_message_days",

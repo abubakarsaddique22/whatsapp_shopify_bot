@@ -1,4 +1,4 @@
-"""`uv run python -m app.owner away | back | status` (P8 owner first)."""
+"""`uv run python -m app.owner off | on | status`: the bot ON / OFF button from the shell."""
 
 from app.owner.presence import main
 

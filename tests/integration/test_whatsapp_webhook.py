@@ -275,10 +275,10 @@ async def test_failed_status_marks_the_outbox_row(
     assert "131031" in row.last_error
 
 
-async def test_an_owner_reply_from_the_business_app_silences_the_bot_for_that_customer(
+async def test_a_team_reply_from_the_business_app_is_recorded_for_that_customer(
     client: httpx.AsyncClient, session: AsyncSession
 ) -> None:
-    """P8: Meta sends the owner's WhatsApp Business app message as smb_message_echoes."""
+    """Meta sends the team's WhatsApp Business app message as smb_message_echoes."""
     echo_wamid = new_wamid()
     body = {
         "object": "whatsapp_business_account",
@@ -310,7 +310,7 @@ async def test_an_owner_reply_from_the_business_app_silences_the_bot_for_that_cu
     assert await inbox_rows(session, echo_wamid) == []  # not a customer message
     result = await session.execute(select(Conversation.id).where(Conversation.wa_id == WA_ID))
     state = await repo.load_state(session, result.scalar_one())
-    assert state.owner_active_until is not None
+    assert state.team_replied_at is not None
 
 
 async def test_body_that_is_not_json_is_ignored_with_200(client: httpx.AsyncClient) -> None:

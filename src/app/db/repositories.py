@@ -184,8 +184,8 @@ async def claim_inbox(
 ) -> WhatsAppInbox | None:
     """Oldest pending inbound message. SKIP LOCKED: two workers never take the same row.
 
-    `received_before` (P8 owner first): only messages that arrived before this moment; newer ones
-    wait, so the owner can answer them first from the WhatsApp Business app.
+    `received_before` (bot OFF, owner/presence.py): only messages that arrived before this moment;
+    newer ones wait, so the team can answer them first from the WhatsApp Business app.
 
     populate_existing: record_inbox_failure updates `attempts` with synchronize_session=False,
     so a session that already holds this row would hand back the stale count. The voice path
@@ -725,6 +725,12 @@ async def get_flag(session: AsyncSession, name: str) -> bool:
     """Is this runtime flag on? A flag that was never set is off."""
     result = await session.execute(select(RuntimeFlag.enabled).where(RuntimeFlag.name == name))
     return bool(result.scalar_one_or_none())
+
+
+async def flag_changed_at(session: AsyncSession, name: str) -> datetime | None:
+    """When this runtime flag was last set (None = never)."""
+    result = await session.execute(select(RuntimeFlag.updated_at).where(RuntimeFlag.name == name))
+    return result.scalar_one_or_none()
 
 
 async def set_flag(session: AsyncSession, name: str, enabled: bool) -> None:

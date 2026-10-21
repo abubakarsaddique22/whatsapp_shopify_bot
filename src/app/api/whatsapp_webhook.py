@@ -87,7 +87,7 @@ async def receive(
             log.warning("whatsapp_delivery_failed", extra={"meta_code": status.error_code})
             await repositories.mark_outbox_failed_by_wamid(session, status.wamid, status.error_code)
 
-    # P8: the owner answered from the WhatsApp Business app: the bot stays silent for that customer
+    # the team answered from the WhatsApp Business app: the bot never answers that message again
     for echo in parsed.owner_echoes:
         await record_owner_reply(session, echo, settings)
 

@@ -1,1 +1,1 @@
-"""P8: owner first, bot as backup (see presence.py)."""
+"""Bot ON / OFF for the store team (see presence.py; the page is api/team.py)."""

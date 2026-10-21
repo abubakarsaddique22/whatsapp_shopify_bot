@@ -1,7 +1,8 @@
-"""P8 owner first, bot as backup, on the real Postgres with the real worker.
+"""Bot ON / OFF button for the team, on the real Postgres with the real worker.
 
-In owner hours a new message waits OWNER_WAIT_MINUTES; an owner reply from the WhatsApp Business
-app (smb_message_echoes) makes the bot silent for that customer, with no notice and no model call.
+Bot OFF: a new message waits TEAM_WAIT_MINUTES; a team reply from the WhatsApp Business app
+(smb_message_echoes) closes it silently; nobody answered -> the bot answers and turns itself ON.
+Bot ON: the bot answers at once, also in a chat the team talked in before.
 Every test is rolled back. Needs: docker compose up -d db, and uv run alembic upgrade head.
 """
 
@@ -17,11 +18,9 @@ from app.core.settings import Settings, get_settings
 from app.db import repositories as repo
 from app.db.tables import Conversation, Handoff, WhatsAppInbox, WhatsAppOutbox
 from app.integrations.whatsapp.payloads import OwnerEcho
-from app.owner.presence import OWNER_AWAY_FLAG, record_owner_reply
+from app.owner.presence import BOT_AUTO_ON_FLAG, bot_is_off, record_owner_reply, set_bot
 from tests.adversarial.harness import router_says
 from tests.adversarial.worker_kit import Chat
-
-OWNER_ON = {"owner_first": True, "owner_wait_minutes": 3}  # Chat's hours: 00:00-00:00 = all day
 
 
 @pytest.fixture
@@ -53,79 +52,91 @@ def echo_to(chat: Chat, text: str = "Ji, main dekhta hoon") -> OwnerEcho:
     )
 
 
-async def test_a_new_message_waits_for_the_owner_in_owner_hours(chat: Chat) -> None:
-    chat.use_settings(**OWNER_ON)
+async def bot_off(chat: Chat) -> Settings:
+    settings = chat.use_settings(team_wait_minutes=3)
+    await set_bot(chat.session, on=False)
+    return settings
+
+
+async def test_bot_off_a_new_message_waits_for_the_team(chat: Chat) -> None:
+    await bot_off(chat)
     inbox_id = await chat.receive("Rolex ki price?")
 
-    assert await worker.claim_next(chat.session) is None  # still the owner's turn
+    assert await worker.claim_next(chat.session) is None  # still the team's turn
 
-    await chat.age(minutes=4)  # the wait is over and the owner did not answer
+    await chat.age(minutes=4)  # the wait is over
     inbox = await worker.claim_next(chat.session)
     assert inbox is not None and inbox.id == inbox_id
 
 
-async def test_with_owner_first_off_the_bot_takes_the_message_at_once(chat: Chat) -> None:
-    chat.use_settings(owner_first=False)
-    inbox_id = await chat.receive("Rolex ki price?")
-    inbox = await worker.claim_next(chat.session)
-    assert inbox is not None and inbox.id == inbox_id
-
-
-async def test_owner_away_means_the_bot_answers_at_once(chat: Chat) -> None:
-    chat.use_settings(**OWNER_ON)
-    await repo.set_flag(chat.session, OWNER_AWAY_FLAG, True)
+async def test_bot_on_takes_the_message_at_once(chat: Chat) -> None:
+    chat.use_settings()
     inbox_id = await chat.receive("Rolex ki price?")
     inbox = await worker.claim_next(chat.session)
     assert inbox is not None and inbox.id == inbox_id
 
 
-async def test_outside_owner_hours_the_bot_answers_at_once(chat: Chat) -> None:
-    now = await repo.db_now(chat.session)
-    # a one-minute owner window that is surely not now (in UTC+00:00)
-    other = (now.hour + 12) % 24
-    chat.use_settings(
-        **OWNER_ON, owner_hours=f"{other:02d}:00-{other:02d}:01", business_utc_offset="+00:00"
-    )
-    inbox_id = await chat.receive("Rolex ki price?")
-    inbox = await worker.claim_next(chat.session)
-    assert inbox is not None and inbox.id == inbox_id
-
-
-async def test_after_an_owner_reply_the_bot_stays_silent_and_costs_nothing(chat: Chat) -> None:
-    settings = chat.use_settings(**OWNER_ON)
+async def test_bot_off_and_the_team_answered_the_bot_stays_silent(chat: Chat) -> None:
+    settings = await bot_off(chat)
     chat.use_model(router_says("price"))
     await chat.receive("Rolex ki price?")
-    await record_owner_reply(chat.session, echo_to(chat), settings)  # owner answered in the app
+    await record_owner_reply(chat.session, echo_to(chat), settings)  # the team answered
     await chat.age(minutes=4)
 
     inbox = await worker.claim_next(chat.session)
     assert inbox is not None
-    await worker.handle_inbox(chat.session, inbox)
+    outcome = await worker.handle_inbox(chat.session, inbox)
 
     assert await chat.status(inbox.id) == "ignored"
     assert await chat.bodies() == []  # no reply and no notice: a notice would cost money
     assert chat.llm.calls == []  # no model call
+    assert outcome.alerts == []
+    assert await bot_is_off(chat.session) is True  # the team is there: the bot stays OFF
     kept = await chat.kept_messages()
     assert "Rolex ki price?" in kept  # the customer's message is in the transcript
-    assert "Ji, main dekhta hoon" in kept  # and so is the owner's reply
+    assert "Ji, main dekhta hoon" in kept  # and so is the team's reply
 
 
-async def test_the_owner_pause_works_even_with_owner_first_off(chat: Chat) -> None:
-    settings = chat.use_settings(owner_first=False)
-    await record_owner_reply(chat.session, echo_to(chat), settings)
+async def test_bot_off_and_nobody_answered_the_bot_answers_and_turns_itself_on(
+    chat: Chat,
+) -> None:
+    await bot_off(chat)
+    inbox_id = await chat.receive("hello")
+    await chat.age(minutes=4)
 
-    inbox_id, _ = await chat.say("aur koi colour?")
+    inbox = await worker.claim_next(chat.session)
+    assert inbox is not None and inbox.id == inbox_id
+    outcome = await worker.handle_inbox(chat.session, inbox)
 
-    assert await chat.status(inbox_id) == "ignored"
-    assert await chat.bodies() == []
+    assert await chat.status(inbox_id) == "done"
+    assert len(await chat.bodies()) == 1  # the customer got an answer
+    assert await bot_is_off(chat.session) is False  # the bot is ON again
+    assert await repo.get_flag(chat.session, BOT_AUTO_ON_FLAG) is True
+    assert [subject for subject, _ in outcome.alerts] == ["Bot khud ON ho gaya"]
 
 
-async def test_when_the_owner_pause_ends_the_bot_answers_again(chat: Chat) -> None:
-    settings = chat.use_settings(owner_first=False)
+async def test_a_team_reply_before_the_message_does_not_count(chat: Chat) -> None:
+    settings = await bot_off(chat)
+    await record_owner_reply(chat.session, echo_to(chat), settings)  # an earlier chat
+    state = await chat.state()
+    state.team_replied_at = (await repo.db_now(chat.session)).replace(year=2000)
+    await repo.save_state(chat.session, await chat.conversation_id(), state)
+
+    inbox_id = await chat.receive("aur koi colour?")
+    await chat.age(minutes=4)
+    inbox = await worker.claim_next(chat.session)
+    assert inbox is not None
+    await worker.handle_inbox(chat.session, inbox)
+
+    assert await chat.status(inbox_id) == "done"  # nobody answered THIS message
+    assert await bot_is_off(chat.session) is False
+
+
+async def test_bot_on_answers_even_in_a_chat_the_team_talked_in_before(chat: Chat) -> None:
+    settings = chat.use_settings()
     await record_owner_reply(chat.session, echo_to(chat), settings)
     state = await chat.state()
-    assert state.owner_active_until is not None
-    state.owner_active_until = (await repo.db_now(chat.session)).replace(year=2000)
+    state.team_replied_at = (await repo.db_now(chat.session)).replace(year=2000)
     await repo.save_state(chat.session, await chat.conversation_id(), state)
 
     inbox_id, _ = await chat.say("hello")
@@ -134,8 +145,23 @@ async def test_when_the_owner_pause_ends_the_bot_answers_again(chat: Chat) -> No
     assert len(await chat.bodies()) == 1
 
 
-async def test_an_echo_of_the_bots_own_reply_does_not_silence_the_bot(chat: Chat) -> None:
-    settings = chat.use_settings(owner_first=False)
+async def test_a_message_the_team_already_answered_is_never_answered_twice(chat: Chat) -> None:
+    """Bot OFF, the team answers, then switches the bot ON before the wait is over."""
+    settings = await bot_off(chat)
+    inbox_id = await chat.receive("Rolex ki price?")
+    await record_owner_reply(chat.session, echo_to(chat), settings)
+    await set_bot(chat.session, on=True)
+
+    inbox = await worker.claim_next(chat.session)  # bot ON: no waiting
+    assert inbox is not None and inbox.id == inbox_id
+    await worker.handle_inbox(chat.session, inbox)
+
+    assert await chat.status(inbox_id) == "ignored"
+    assert await chat.bodies() == []
+
+
+async def test_an_echo_of_the_bots_own_reply_is_not_a_team_reply(chat: Chat) -> None:
+    settings = chat.use_settings()
     conversation_id = await chat.conversation_id()
     ours = f"wamid.bot-{uuid.uuid4().hex[:12]}"
     chat.session.add(
@@ -145,13 +171,13 @@ async def test_an_echo_of_the_bots_own_reply_does_not_silence_the_bot(chat: Chat
 
     echo = OwnerEcho(wamid=ours, to_wa_id=chat.wa_id, msg_type="text", text="Hi")
     assert await record_owner_reply(chat.session, echo, settings) is None
-    assert (await chat.state()).owner_active_until is None
+    assert (await chat.state()).team_replied_at is None
 
 
-async def test_an_owner_message_to_a_new_customer_does_not_open_the_24_hour_window(
+async def test_a_team_message_to_a_new_customer_does_not_open_the_24_hour_window(
     chat: Chat,
 ) -> None:
-    settings: Settings = chat.use_settings(owner_first=False)
+    settings: Settings = chat.use_settings()
     conversation_id = await record_owner_reply(chat.session, echo_to(chat), settings)
     assert conversation_id is not None
 
@@ -159,3 +185,11 @@ async def test_an_owner_message_to_a_new_customer_does_not_open_the_24_hour_wind
         select(Conversation.last_inbound_at).where(Conversation.id == conversation_id)
     )
     assert result.scalar_one() is None  # only a CUSTOMER message opens the window
+
+
+async def test_switching_by_hand_clears_the_automatic_note(chat: Chat) -> None:
+    await set_bot(chat.session, on=True, automatic=True)
+    assert await repo.get_flag(chat.session, BOT_AUTO_ON_FLAG) is True
+    await set_bot(chat.session, on=False)
+    assert await repo.get_flag(chat.session, BOT_AUTO_ON_FLAG) is False
+    assert await bot_is_off(chat.session) is True

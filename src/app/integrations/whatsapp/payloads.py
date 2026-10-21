@@ -105,7 +105,14 @@ class _RawValue(_Raw):
 
 
 class _RawChange(_Raw):
+    field: str = ""
     value: _RawValue = Field(default_factory=_RawValue)
+
+
+# Coexistence (P5): after onboarding Meta replays OLD chats in `history` webhooks, and a media
+# message of that history comes as value.messages. Those are not new customer messages: never
+# answer them. smb_app_state_sync (contacts) and account_update carry no messages either.
+IGNORED_FIELDS = {"history", "smb_app_state_sync", "account_update"}
 
 
 class _RawEntry(_Raw):
@@ -164,6 +171,8 @@ def parse_webhook(payload: dict[str, Any]) -> ParsedWebhook:
     result = ParsedWebhook()
     for entry in raw.entry:
         for change in entry.changes:
+            if change.field in IGNORED_FIELDS:
+                continue
             for m in change.value.messages:
                 result.messages.append(_to_inbound(m))
             for s in change.value.statuses:

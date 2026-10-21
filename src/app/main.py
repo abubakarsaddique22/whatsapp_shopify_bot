@@ -5,7 +5,7 @@ import time
 
 from fastapi import FastAPI, Request
 
-from app.api import admin, dev, health, shopify_webhook, whatsapp_webhook
+from app.api import admin, dev, health, shopify_webhook, signup, team, whatsapp_webhook
 from app.core.errors import register_error_handlers
 from app.core.ids import correlation_id_var, new_correlation_id
 from app.core.logging import setup_logging
@@ -49,6 +49,10 @@ def create_app() -> FastAPI:
         app.include_router(dev.router)  # /dev/simulate and /dev/outbox exist only locally
     if settings.admin_endpoints_enabled:  # Phase 11: off by default; every call needs X-Admin-Key
         app.include_router(admin.router)
+    if settings.team_password.get_secret_value():  # the team's bot ON / OFF page
+        app.include_router(team.router)
+    if settings.signup_key.get_secret_value():  # P5: connect the Business app number (once)
+        app.include_router(signup.router)
     return app
 
 
